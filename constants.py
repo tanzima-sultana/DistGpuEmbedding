@@ -1,0 +1,18 @@
+import glob
+DATASET = glob.glob(
+        "/home/tanzima/.cache/huggingface/hub/datasets--wikimedia--wikipedia/snapshots/b04c8d1ceb2f5cd4588862100d08de323dccfbaa/20231101.en/*.parquet"
+    )
+DATA_PATH = "data/processed_dataset"
+SEED = 42
+
+# Embedding
+
+CPU="cpu"
+GPU="gpu"
+SPARK="spark"
+SPARK_GPU="spark-gpu"
+GPU_ADAPTIVE="gpu-adaptive"
+
+INDEX_FLATIP="FlatIndexIP"
+INDEX_IVF="IVFFlatIndex"
+INDEX_HNSW="HNSWFlatIndex"

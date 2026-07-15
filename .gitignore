@@ -1,0 +1,37 @@
+# AWS credentials / keys — NEVER commit these
+*.pem
+.aws/
+*credentials*
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# Data & model artifacts (large, shouldn't be in git)
+*.parquet
+*.pkl
+*.pickle
+*.npy
+*.npz
+*.faiss
+*.index
+
+# Spark
+metastore_db/
+derby.log
+spark-warehouse/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS/editor cruft
+.DS_Store
+.vscode/
+*.swp
+
+# Env/config
+.env
