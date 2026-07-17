@@ -4,10 +4,12 @@ import pyarrow.parquet as pq
 import pickle
 
 from sentence_transformers import SentenceTransformer, CrossEncoder
+from load_dataset import load_parquet_dataset, load_parquet_dataset_s3
+from src.embedding import Embedding
 from src.indexing import FAISSIndexing
 from src.evaluation import Evaluation
 
-from constants import SEED, LOCAL, AWS, S3_BUCKET, INDEX_FLATIP, INDEX_IVF, INDEX_HNSW
+from constants import SEED, LOCAL, AWS, CPU, GPU, SPARK, SPARK_GPU, GPU_ADAPTIVE, S3_BUCKET, INDEX_FLATIP, INDEX_IVF, INDEX_HNSW
 
 if __name__ == "__main__":
     print("\n----------- Evaluation -----------\n")
@@ -18,30 +20,70 @@ if __name__ == "__main__":
     # arg 2 : mode -> cpu | gpu | spark | spark-gpu | gpu-adaptive
     device_mode = sys.argv[2]
 
-    # arg 3 : Dataset size
-    dataset_size = int(sys.argv[3])
+    # arg 3 : reload
+    # reload = 0, create new embedding
+    # reload = 1, load from disk if embedding exists
+    reload = int(sys.argv[3])
 
-    # arg 4 : no_of_queries
-    no_of_queries = int(sys.argv[4]) if len(sys.argv) > 4 else 50
+    # arg 4 : Dataset size
+    dataset_size = int(sys.argv[4])
+
+    # arg 5 : Batch size (starting batch size, for gpu-adaptive)
+    batch_size = int(sys.argv[5]) if len(sys.argv) > 5 else 256
+
+    # arg 6 : no_partition (only used for spark / spark-gpu)
+    no_partition = int(sys.argv[6]) if len(sys.argv) > 6 else 4
+
+    # arg 7 : model name (all-mpnet-base-v2 for adaptive)
+    model_name = sys.argv[7] if len(sys.argv) > 7 else "all-MiniLM-L6-v2"
+
+    # arg 8 : no_of_queries
+    no_of_queries = int(sys.argv[8]) if len(sys.argv) > 8 else 50
     
-    # Embedding path
-    embedding_path = f"embeddings/{device_mode}_{dataset_size}.parquet"
-    if mode == AWS:
-        embedding_path = f"s3://{S3_BUCKET}/" + embedding_path  
+    # 1. Dataset
+    dataset = None
+    if mode == LOCAL:
+        dataset = load_parquet_dataset(dataset_size)
+    else:
+        dataset = load_parquet_dataset_s3(dataset_size)
+    
+    print(dataset)
 
-    # Embedding
-    table = pq.read_table(embedding_path)
-    embeddings = np.array(table["embedding"].to_pylist(), dtype=np.float32)
-    doc_ids = table["doc_id"].to_pylist()
-    titles = table["title"].to_pylist()
+    valid_device_modes = [CPU, GPU, SPARK, SPARK_GPU, GPU_ADAPTIVE]
+    if device_mode not in valid_device_modes:
+        print(f"Invalid mode '{device_mode}'. Choose from {valid_device_modes}")
+        sys.exit(1)
 
+    device = "cpu"
+    if device_mode == GPU or device_mode == SPARK_GPU or device_mode == GPU_ADAPTIVE:
+        device = "cuda"
+
+    print(f"\n----- Eval mode: {mode} (device={device_mode}) -----")
+    print(f"Dataset size: {dataset_size}, Batch size: {batch_size}",
+          f", Partitions: {no_partition}", f", Model: {model_name}")
+
+    # 2. Embedding 
+    embedder = Embedding(mode, device_mode, dataset_size, model_name)
+
+    # ----- Local 
+    embeddings = None
+    if mode == LOCAL:
+        if device_mode in (CPU, GPU):
+            embeddings = embedder.embed_plain(reload, dataset, dataset_size, batch_size, device)
+        elif device_mode in (SPARK, SPARK_GPU):
+            embeddings = embedder.embed_spark(reload, dataset, dataset_size, batch_size, no_partition, device)
+        elif device_mode == GPU_ADAPTIVE:
+            embeddings = embedder.embed_adaptive_gpu(reload, dataset, dataset_size, batch_size, device)
+    else:
+        embeddings = embedder.embed_spark_aws(reload, dataset, dataset_size, batch_size, no_partition, device)
+
+    saved_table = pq.read_table(embedder.output_path)
+    doc_ids = saved_table["doc_id"].to_pylist()
+    titles = saved_table["title"].to_pylist()
     #print(embeddings.shape)
     #print(embeddings.dtype)
 
-    # Indexing
-    index = FAISSIndexing(mode, device_mode, dataset_size)
-
-    # 2. Indexing
+    # 3. Indexing
     index = FAISSIndexing(mode, device_mode, dataset_size)
 
     flat_index = index.generate_flat_ip(1, embeddings, dataset_size)
@@ -53,6 +95,7 @@ if __name__ == "__main__":
     hnsw_index = index.generate_hnsw_flat(1, embeddings, dataset_size, M=32)
     print("HNSW ntotal:", hnsw_index.ntotal)
     
+    # 4. Evaluation
     # Choose no_of_queries from embedding
     rng = np.random.default_rng(SEED)
     query_indices = rng.choice(len(embeddings), size=no_of_queries, replace=False)

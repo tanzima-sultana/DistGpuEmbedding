@@ -14,7 +14,7 @@ MODEL="all-MiniLM-L6-v2" #all-mpnet-base-v2
 
 # Embedding
 
-python3 scripts/run_embedding.py local cpu $RELOAD $DATASET_SIZE $BATCH_SIZE $NUM_PARTITIONS $MODEL "$@"
+#python3 scripts/run_embedding.py local cpu $RELOAD $DATASET_SIZE $BATCH_SIZE $NUM_PARTITIONS $MODEL "$@"
 #python3 scripts/run_embedding.py local gpu $RELOAD $DATASET_SIZE $BATCH_SIZE $NUM_PARTITIONS $MODEL "$@"
 #python3 scripts/run_embedding.py local spark $RELOAD $DATASET_SIZE $BATCH_SIZE $NUM_PARTITIONS $MODEL "$@"
 #python3 scripts/run_embedding.py local spark-gpu $RELOAD $DATASET_SIZE $BATCH_SIZE $NUM_PARTITIONS $MODEL "$@"
@@ -29,6 +29,6 @@ python3 scripts/run_embedding.py local cpu $RELOAD $DATASET_SIZE $BATCH_SIZE $NU
 
 # Evaluation
 
+# ---- Evaluation ----
 NO_QUERY=50
-
-python3 scripts/run_evaluation.py local cpu $DATASET_SIZE $NO_QUERY "$@"
+python3 scripts/run_evaluation.py local cpu $RELOAD $DATASET_SIZE $BATCH_SIZE $NUM_PARTITIONS $MODEL $NO_QUERY "$@"
