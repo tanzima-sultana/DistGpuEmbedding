@@ -7,32 +7,101 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from sentence_transformers import SentenceTransformer
 from pyspark.sql import SparkSession
+import boto3
 
+from constants import LOCAL, AWS, S3_BUCKET
 
 class Embedding:
-    def __init__(self, model_name="all-MiniLM-L6-v2", out_dir="embeddings"):
+    def __init__(self, mode, device_mode, dataset_size, model_name):
         self.model_name = model_name
-        self.out_dir = out_dir
+        self.device_mode = device_mode
+        self.dataset_size = dataset_size
 
-    def save(self, doc_ids, titles, embeddings, out_path):
-        os.makedirs(self.out_dir, exist_ok=True)
+        self.output_path = f"embeddings/{device_mode}_{dataset_size}.parquet"
+        if mode == AWS:
+            self.output_path = f"s3://{S3_BUCKET}/" + self.output_path
+    
+    def save(self, doc_ids, titles, embeddings):
         table = pa.table({
             "doc_id": doc_ids,
             "title": titles,
             "embedding": embeddings if isinstance(embeddings, list) else embeddings.tolist(),
         })
-        pq.write_table(table, out_path)
-        print(f"Saved embeddings to {out_path}")
+        pq.write_table(table, self.output_path)
+        print(f"Saved embeddings to {self.output_path}")
+
+    # ------- AWS ------- #
+
+    def s3_key_exists(self, bucket, key):
+        s3_client = boto3.client("s3")
+        try:
+            s3_client.head_object(Bucket=bucket, Key=key)
+            return True
+        except s3_client.exceptions.ClientError:
+            return False
+
+    def get_s3_key(self):
+        # self.output_path looks like: s3://dist-gpu-embedding/embeddings/spark_cuda_15000.parquet
+        # strip the "s3://bucket/" prefix to get just the key
+        prefix = f"s3://{S3_BUCKET}/"
+        if not self.output_path.startswith(prefix):
+            raise ValueError(f"output_path '{self.output_path}' does not start with expected prefix '{prefix}'")
+        return self.output_path[len(prefix):]
+
+    #reload, dataset, dataset_size, batch_size, no_partition, device
+    def embed_spark_aws(self,reload, dataset, dataset_size, batch_size, no_partition, device):
+
+        s3_key = self.get_s3_key()
+
+        if reload == 1 and self.s3_key_exists(S3_BUCKET, s3_key):
+            
+            print(f"Embeddings already exist at {self.output_path}, loading from S3.")
+            table = pq.read_table(self.output_path)
+            cached_embeddings = np.array(table["embedding"].to_pylist(), dtype=np.float32)
+            return cached_embeddings
+
+        spark = SparkSession.builder \
+            .appName("spark_aws_embedding") \
+            .getOrCreate()
+        
+        rows = [{"doc_id": d, "title": t, "text": x}
+                for d, t, x in zip(dataset["doc_id"], dataset["title"], dataset["text"])]
+
+        rdd = spark.sparkContext.parallelize(rows, numSlices=no_partition)
+        print(f"Partitions: {rdd.getNumPartitions()}")
+
+        start = time.time()
+        embed_fn = partial(
+            self.embed_partition,
+            batch_size=batch_size,
+            device=device,
+            model_name=self.model_name,
+        )
+        results = rdd.mapPartitions(embed_fn).collect()
+        elapsed = time.time() - start
+
+        throughput = len(results) / elapsed
+        print(f"Embedded {len(results)} docs in {elapsed:.2f}s ({throughput:.1f} texts/sec)")
+
+        doc_ids = [r[0] for r in results]
+        titles = [r[1] for r in results]
+        embeddings = [r[2] for r in results]
+        
+        # Save
+        self.save(doc_ids, titles, embeddings)
+
+        return embeddings
+
+
+    # ----- Local ------ #
 
     # For both CPU and GPU
     def embed_plain(self, reload, dataset, dataset_size, batch_size, device):
-        
-        out_path = f"{self.out_dir}/{device}_{dataset_size}.parquet"
 
         # If reload=1 and already exists, return cached embeddings
-        if reload == 1 and os.path.exists(out_path):
-            print(f"Embeddings already exist at {out_path}, loading from disk.")
-            table = pq.read_table(out_path)
+        if reload == 1 and os.path.exists(self.output_path):
+            print(f"Embeddings already exist at {self.output_path}, loading from disk.")
+            table = pq.read_table(self.output_path)
             cached_embeddings = np.array(table["embedding"].to_pylist(), dtype=np.float32)
             return cached_embeddings
 
@@ -57,7 +126,9 @@ class Embedding:
         print(f"Embedding shape: {embeddings.shape}")
 
         # len(texts) = dataset_size
-        self.save(doc_ids, titles, embeddings, out_path)
+        # Save
+        os.makedirs(os.path.dirname(self.output_path), exist_ok=True)
+        self.save(doc_ids, titles, embeddings)
 
         return embeddings
 
@@ -81,11 +152,10 @@ class Embedding:
 
     def embed_spark(self, reload, dataset, dataset_size, batch_size, no_partition, device):
         
-        out_path = f"{self.out_dir}/spark_{device}_{dataset_size}.parquet"
         # If already exists, return cached embeddings
-        if reload == 1 and os.path.exists(out_path):
-            print(f"Embeddings already exist at {out_path}, loading from disk.")
-            table = pq.read_table(out_path)
+        if reload == 1 and os.path.exists(self.output_path):
+            print(f"Embeddings already exist at {self.output_path}, loading from disk.")
+            table = pq.read_table(self.output_path)
             cached_embeddings = np.array(table["embedding"].to_pylist(), dtype=np.float32)
             return cached_embeddings
     
@@ -117,7 +187,8 @@ class Embedding:
         titles = [r[1] for r in results]
         embeddings = [r[2] for r in results]
 
-        self.save(doc_ids, titles, embeddings, out_path)
+        os.makedirs(os.path.dirname(self.output_path), exist_ok=True)
+        self.save(doc_ids, titles, embeddings)
 
         spark.stop()
         return embeddings
@@ -155,11 +226,10 @@ class Embedding:
     
     def embed_adaptive_gpu(self, reload, dataset, dataset_size, start_batch_size, device="cuda"):
 
-        out_path = f"{self.out_dir}/adaptive_{device}_{dataset_size}.parquet"
         # If already exists, return cached embeddings
-        if reload == 1 and os.path.exists(out_path):
-            print(f"Embeddings already exist at {out_path}, loading from disk.")
-            table = pq.read_table(out_path)
+        if reload == 1 and os.path.exists(self.output_path):
+            print(f"Embeddings already exist at {self.output_path}, loading from disk.")
+            table = pq.read_table(self.output_path)
             cached_embeddings = np.array(table["embedding"].to_pylist(), dtype=np.float32)
             return cached_embeddings
     
@@ -184,7 +254,8 @@ class Embedding:
         print(f"Embedded {len(texts)} docs in {elapsed:.2f}s ({throughput:.1f} texts/sec)")
         print(f"Embedding shape: {embeddings.shape}")
 
-        self.save(doc_ids, titles, embeddings, out_path)
+        os.makedirs(os.path.dirname(self.output_path), exist_ok=True)
+        self.save(doc_ids, titles, embeddings)
 
         return embeddings
 

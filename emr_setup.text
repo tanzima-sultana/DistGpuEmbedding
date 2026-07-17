@@ -1,0 +1,123 @@
+EMR CLUSTER SETUP
+
+1. Create IAM user (CLI/dev access)
+   - IAM → Users → Create user
+   - Attach: AmazonElasticMapReduceFullAccess, AmazonS3FullAccess
+
+2. Create EMR Studio
+   EMR → EMR Studio → Create Studio → Custom setup
+   - S3 location: create new bucket (or reuse)
+   - Encrypt with KMS: skip
+   - Service role: create manually if no shortcut (see below)
+   - Workspace name: any; Collaboration: off
+   - Authentication: IAM
+   - Networking: default VPC, any subnet, default security group
+     ("Enable clusters/endpoints and Git repository")
+
+   Studio service role (if needed):
+   IAM → Roles → Create role → AWS service → use case: EMR
+   - Auto-attaches AmazonEMRServicePolicy_v2
+   
+   Attach broad permissions to the Studio service role
+   (find exact role name via: aws iam list-role-policies --role-name <name>,
+   confirm real one via error message ARN, e.g. "emr-studio-service-role")
+   IAM → Roles → <studio service role> → Add permissions → Attach policies:
+   - AmazonS3FullAccess
+   - AmazonEC2FullAccess
+   - AdministratorAccess
+
+
+3. Create EMR Cluster
+   EMR → Clusters → Create cluster
+   - Application bundle: Spark Interactive (includes JEG + Livy)
+   - Glue Data Catalog: unchecked
+   - OS: default Amazon Linux
+   - Instance type: x86 only (e.g. m5.xlarge or g4dn.xlarge for GPU)
+   - Primary: 1, Core: 1 (or 0 for single-node testing)
+   - High availability: off
+   - EBS: default (15GB) fine for testing
+   - Cluster sizing: manual (not managed/auto scaling)
+   - Spot instances: off
+   - Networking: same VPC and subnet as Studio
+   - Security groups: EMR-managed (auto-created)
+   - Steps: none
+   - Bootstrap actions: script uploaded to S3 first, then referenced by path
+   - Cluster logs: enabled (check which bucket it defaults to)
+   - EC2 key pair: create one (.pem) for SSH debugging
+   - IAM service role: EMR_DefaultRole
+   - EC2 instance profile: EMR_EC2_DefaultRole
+
+4. Bootstrap script (Spark only):
+
+   #!/bin/bash
+   set -e
+   echo "Starting bootstrap..."
+   sudo pip3 install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+   sudo pip3 install --no-cache-dir \
+       sentence-transformers==2.7.0 \
+       transformers==4.40.0 \
+       faiss-cpu \
+       tqdm \
+       pyyaml
+   echo "Bootstrap complete"
+   
+   with GPU
+   
+   	#!/bin/bash
+	set -e
+	echo "Starting bootstrap..."
+
+	# --- Install torch (CUDA 12.8 build, verified against driver 560.35.03 / CUDA 12.6) ---
+	sudo pip3 install --no-cache-dir torch==2.8.0 --index-url https://download.pytorch.org/whl/cu128
+
+	# --- faiss-gpu requires numpy<2 (ABI incompatibility with numpy 2.x, verified empirically) ---
+	sudo pip3 install --no-cache-dir "numpy<2"
+
+	# --- faiss-gpu only. Do NOT install faiss-cpu alongside it — they share the same
+	#     'faiss' module namespace and silently overwrite each other, breaking GPU support. ---
+	sudo pip3 install --no-cache-dir faiss-gpu
+
+	# --- Embedding stack ---
+	sudo pip3 install --no-cache-dir sentence-transformers transformers
+
+	# --- Utilities ---
+	sudo pip3 install --no-cache-dir tqdm pyyaml
+
+	# --- Persist LD_LIBRARY_PATH for nvidia .so files (cupti, nccl, cudnn, etc.)
+	#     Required because torch's pip-bundled nvidia-*-cu12 packages don't register
+	#     themselves on the system linker path by default. Written to /etc/environment
+	#     (not .bashrc) so it applies to non-interactive Spark executor processes too. ---
+	NVIDIA_LIB_PATHS=$(python3 -c "import nvidia, os; print(':'.join(os.path.join(os.path.dirname(nvidia.__file__), d, 'lib') for d in os.listdir(os.path.dirname(nvidia.__file__))))")
+	echo "LD_LIBRARY_PATH=${NVIDIA_LIB_PATHS}" | sudo tee -a /etc/environment
+
+	echo "Bootstrap complete"
+
+5. SSH access
+   - chmod 400 your-key.pem
+   - ssh -i AWS_KEYS/emr-gpu.pem hadoop@ec2-3-234-142-73.compute-1.amazonaws.com
+   
+ATTACH EMR STUDIO TO CLUSTER
+
+1. Ensure subnet is tagged:
+   VPC → Subnets → your subnet → Tags
+   Add: for-use-with-amazon-emr-managed-policies = true
+
+2. Ensure cluster's security groups are tagged (same key/value):
+   EC2 → Security Groups → ElasticMapReduce-Primary / Core
+
+3. Ensure Studio-managed security groups are tagged (same key/value):
+   EC2 → Security Groups → DefaultEngineSecurityGroup
+   EC2 → Security Groups → DefaultWorkspaceSecurityGroupGit
+   (find exact names/IDs from Workspace's Network configurations screen)
+   
+5. Create a Workspace (EMR Studio → Workspaces (Notebooks) → Create Workspace)
+
+6. From the Workspaces list (not inside JupyterLab):
+   select the Workspace row → Attach cluster
+   - EMR cluster: select your running cluster
+   - Cluster security group: leave default
+   - Workspace security group: leave default
+   - Runtime role: leave blank
+   - Launch Workspace
+   
+   

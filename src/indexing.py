@@ -2,25 +2,68 @@ import os
 import pickle
 import numpy as np
 import faiss
+import boto3
+import tempfile
 
-from constants import INDEX_FLATIP, INDEX_IVF, INDEX_HNSW
+from constants import LOCAL, AWS, INDEX_FLATIP, INDEX_IVF, INDEX_HNSW, S3_BUCKET
 
 class FAISSIndexing:
-    def __init__(self, index_dir="indexing"):
-        self.index_dir = index_dir
+    def __init__(self, mode, device_mode, dataset_size):
+        self.mode = mode
+        self.device_mode = device_mode
+        self.dataset_size = dataset_size
+
+        self.output_path = f"index/{device_mode}_{dataset_size}/"
+        if self.mode == AWS:
+            self.output_path = f"s3://{S3_BUCKET}/" + self.output_path
+    
+    def _s3_key_exists(self, key):
+        s3_client = boto3.client("s3")
+        try:
+            s3_client.head_object(Bucket=S3_BUCKET, Key=key)
+            return True
+        except s3_client.exceptions.ClientError:
+            return False
+
+    def _exists(self, path):
+        # For AWS, check bucket in s3
+        if self.mode == AWS:
+            key = path.replace(f"s3://{S3_BUCKET}/", "")
+            return self._s3_key_exists(key)
+        # Just local filepath check
+        return os.path.exists(path)
 
     def save(self, index, path):
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, 'wb') as f:
-            pickle.dump(index, f)
+        if self.mode == AWS:
+            key = path.replace(f"s3://{S3_BUCKET}/", "")
+            with tempfile.NamedTemporaryFile(suffix=".index", delete=False) as tmp:
+                tmp_path = tmp.name
+            faiss.write_index(index, tmp_path)
+            s3_client = boto3.client("s3")
+            s3_client.upload_file(tmp_path, S3_BUCKET, key)
+            os.remove(tmp_path)
+        else:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            faiss.write_index(index, path)
+        print(f"Saved index to {path}")
 
-    # 1. FlatIP
+    def load(self, path):
+        if self.mode == AWS:
+            key = path.replace(f"s3://{S3_BUCKET}/", "")
+            s3_client = boto3.client("s3")
+            with tempfile.NamedTemporaryFile(suffix=".index", delete=False) as tmp:
+                tmp_path = tmp.name
+            s3_client.download_file(S3_BUCKET, key, tmp_path)
+            index = faiss.read_index(tmp_path)
+            os.remove(tmp_path)
+            return index
+        return faiss.read_index(path)
+
     def generate_flat_ip(self, reload, embeddings, dataset_size):
-        path = f"{self.index_dir}/{INDEX_FLATIP}/{dataset_size}.pkl"
-        if reload == 1 and os.path.exists(path):
-            with open(path, 'rb') as f:
-                print(f"Load indexing ({INDEX_FLATIP}) from disk")
-                return pickle.load(f)
+        path = self.output_path + f"{INDEX_FLATIP}.index"
+        if reload == 1 and self._exists(path):
+            print(f"Load indexing ({INDEX_FLATIP}) from disk")
+            return self.load(path)
 
         embeddings = np.array(embeddings).astype('float32')
         index = faiss.IndexFlatIP(embeddings.shape[1])
@@ -29,13 +72,11 @@ class FAISSIndexing:
         self.save(index, path)
         return index
 
-    # IVF
     def generate_ivf_flat(self, reload, embeddings, dataset_size, nlist=256):
-        path = f"{self.index_dir}/{INDEX_IVF}/{dataset_size}.pkl"
-        if reload == 1 and os.path.exists(path):
-            with open(path, 'rb') as f:
-                print(f"Load indexing ({INDEX_IVF}) from disk")
-                return pickle.load(f)
+        path = self.output_path + f"{INDEX_IVF}.index"
+        if reload == 1 and self._exists(path):
+            print(f"Load indexing ({INDEX_IVF}) from disk")
+            return self.load(path)
 
         embeddings = np.array(embeddings).astype('float32')
         dim = embeddings.shape[1]
@@ -53,13 +94,11 @@ class FAISSIndexing:
         self.save(index, path)
         return index
 
-    # HNSW
     def generate_hnsw_flat(self, reload, embeddings, dataset_size, M=32):
-        path = f"{self.index_dir}/{INDEX_HNSW}/{dataset_size}.pkl"
-        if reload == 1 and os.path.exists(path):
-            with open(path, 'rb') as f:
-                print(f"Load indexing ({INDEX_HNSW}) from disk")
-                return pickle.load(f)
+        path = self.output_path + f"{INDEX_HNSW}.index"
+        if reload == 1 and self._exists(path):
+            print(f"Load indexing ({INDEX_HNSW}) from disk")
+            return self.load(path)
 
         embeddings = np.array(embeddings).astype('float32')
         dim = embeddings.shape[1]

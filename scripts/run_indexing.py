@@ -4,19 +4,29 @@ import pyarrow.parquet as pq
 
 from src.indexing import FAISSIndexing
 
+from constants import LOCAL, AWS, S3_BUCKET
+
 if __name__ == "__main__":
     print("\n-------------- Indexing --------------\n")
 
-    # arg 1 : reload
+    # agr 1 : local or aws
+    mode = sys.argv[1]
+
+    # arg 2 : mode -> cpu | gpu | spark | spark-gpu | gpu-adaptive
+    device_mode = sys.argv[2]
+
+    # arg 3 : reload
     # reload = 0, create new embedding
     # reload = 1, load from disk if embedding exists
-    reload = int(sys.argv[1])
+    reload = int(sys.argv[3])
 
-    # arg 2 : Dataset size
-    dataset_size = int(sys.argv[2])
+    # arg 4 : Dataset size
+    dataset_size = int(sys.argv[4])
 
-    # arg 3 : Embedding path
-    embedding_path = sys.argv[3] if len(sys.argv) > 3 else "embeddings/cpu_10000.parquet"
+    # Embedding path
+    embedding_path = f"embeddings/{device_mode}_{dataset_size}.parquet"
+    if mode == AWS:
+        embedding_path = f"s3://{S3_BUCKET}/" + embedding_path  
    
     # 1. Embedding
     table = pq.read_table(embedding_path)
@@ -27,8 +37,8 @@ if __name__ == "__main__":
     print(embeddings.shape)
     print(embeddings.dtype)
 
-    # 2. Embedding
-    index = FAISSIndexing()
+    # 2. Indexing
+    index = FAISSIndexing(mode, device_mode, dataset_size)
 
     flat_index = index.generate_flat_ip(reload, embeddings, dataset_size)
     print("Flat ntotal:", flat_index.ntotal)

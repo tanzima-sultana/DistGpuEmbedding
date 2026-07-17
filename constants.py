@@ -7,6 +7,8 @@ SEED = 42
 
 # Embedding
 
+LOCAL="local"
+AWS="aws"
 CPU="cpu"
 GPU="gpu"
 SPARK="spark"
@@ -16,3 +18,7 @@ GPU_ADAPTIVE="gpu-adaptive"
 INDEX_FLATIP="FlatIndexIP"
 INDEX_IVF="IVFFlatIndex"
 INDEX_HNSW="HNSWFlatIndex"
+
+# AWS
+
+S3_BUCKET = "dist-gpu-embedding"
