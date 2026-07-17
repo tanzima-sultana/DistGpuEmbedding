@@ -57,6 +57,8 @@ class FAISSIndexing:
             index = faiss.read_index(tmp_path)
             os.remove(tmp_path)
             return index
+        
+        # Local
         return faiss.read_index(path)
 
     def generate_flat_ip(self, reload, embeddings, dataset_size):

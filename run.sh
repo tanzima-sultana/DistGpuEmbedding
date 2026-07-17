@@ -14,14 +14,11 @@ MODEL="all-MiniLM-L6-v2" #all-mpnet-base-v2
 
 # Embedding
 
-#python3 scripts/run_embedding.py local cpu $RELOAD $DATASET_SIZE $BATCH_SIZE $NUM_PARTITIONS $MODEL "$@"
+python3 scripts/run_embedding.py local cpu $RELOAD $DATASET_SIZE $BATCH_SIZE $NUM_PARTITIONS $MODEL "$@"
 #python3 scripts/run_embedding.py local gpu $RELOAD $DATASET_SIZE $BATCH_SIZE $NUM_PARTITIONS $MODEL "$@"
 #python3 scripts/run_embedding.py local spark $RELOAD $DATASET_SIZE $BATCH_SIZE $NUM_PARTITIONS $MODEL "$@"
 #python3 scripts/run_embedding.py local spark-gpu $RELOAD $DATASET_SIZE $BATCH_SIZE $NUM_PARTITIONS $MODEL "$@"
 #python3 scripts/run_embedding.py local gpu-adaptive $RELOAD $DATASET_SIZE 1024 $NUM_PARTITIONS $MODEL "$@"
-
-#python3 scripts/run_embedding.py aws spark $RELOAD $DATASET_SIZE $BATCH_SIZE $NUM_PARTITIONS "$@"
-#python3 scripts/run_embedding.py aws spark-gpu $RELOAD $DATASET_SIZE $BATCH_SIZE $NUM_PARTITIONS "$@"
 
 # Indexing
 
@@ -30,10 +27,8 @@ MODEL="all-MiniLM-L6-v2" #all-mpnet-base-v2
 #python3 scripts/run_indexing.py local spark $RELOAD $DATASET_SIZE "$@"
 #python3 scripts/run_indexing.py local spark-gpu $RELOAD $DATASET_SIZE "$@"
 
-python3 scripts/run_indexing.py aws gpu $RELOAD $DATASET_SIZE "$@"
-
 # Evaluation
 
 NO_QUERY=50
 
-#python3 scripts/run_evaluation.py $DATASET_SIZE $EMBEDDING_PATH $NO_QUERY "$@"
+python3 scripts/run_evaluation.py local cpu $DATASET_SIZE $NO_QUERY "$@"

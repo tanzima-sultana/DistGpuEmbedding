@@ -12,8 +12,11 @@ class Evaluation:
         results = {}
         for i in range(len(query_doc_ids)):
             cur_doc_id = query_doc_ids[i]
+            # Find neighbor doc_ids from indices
             neighbor_doc_ids = [doc_ids[j] for j in indices[i]]
+            # Just remove the cur doc_id if its there
             neighbor_doc_ids = [d for d in neighbor_doc_ids if d != cur_doc_id][:k]
+            # result has all neighbour doc_ids of cur doc_id
             results[cur_doc_id] = neighbor_doc_ids
 
         return results
