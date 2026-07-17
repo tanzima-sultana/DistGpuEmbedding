@@ -31,4 +31,7 @@ MODEL="all-MiniLM-L6-v2" #all-mpnet-base-v2
 
 # ---- Evaluation ----
 NO_QUERY=50
-python3 scripts/run_evaluation.py local cpu $RELOAD $DATASET_SIZE $BATCH_SIZE $NUM_PARTITIONS $MODEL $NO_QUERY "$@"
+#python3 scripts/run_evaluation.py local cpu $DATASET_SIZE $NO_QUERY "$@"
+
+# ---- DistGpuEmbedding ----
+python3 scripts/run_pipeline.py local cpu $RELOAD $DATASET_SIZE $BATCH_SIZE $NUM_PARTITIONS $MODEL $NO_QUERY "$@"

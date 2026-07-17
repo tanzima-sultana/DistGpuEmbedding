@@ -22,3 +22,6 @@ INDEX_HNSW="HNSWFlatIndex"
 # AWS
 
 S3_BUCKET = "dist-gpu-embedding"
+
+EC2_RATE_G4DN_XLARGE = 0.526  
+EMR_MARKUP_G4DN_XLARGE = 0.07  

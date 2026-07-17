@@ -31,8 +31,6 @@ if __name__ == "__main__":
     # 1. Embedding
     table = pq.read_table(embedding_path)
     embeddings = np.array(table["embedding"].to_pylist(), dtype=np.float32)
-    doc_ids = table["doc_id"].to_pylist()
-    titles = table["title"].to_pylist()
 
     print(embeddings.shape)
     print(embeddings.dtype)

@@ -19,5 +19,8 @@ python3 scripts/run_embedding.py $MODE $DEVICE_MODE $RELOAD $DATASET_SIZE $BATCH
  
 # ---- Evaluation ----
 #NO_QUERY=50
-#python3 scripts/run_evaluation.py $MODE $DEVICE_MODE $RELOAD $DATASET_SIZE $BATCH_SIZE $NUM_PARTITIONS $MODEL $NO_QUERY "$@"
+#python3 scripts/run_evaluation.py $MODE $DEVICE_MODE $DATASET_SIZE $NO_QUERY "$@"
+
+# ---- DistGpuEmbedding ----
+#python3 scripts/run_pipeline.py $MODE $DEVICE_MODE $RELOAD $DATASET_SIZE $BATCH_SIZE $NUM_PARTITIONS $MODEL $NO_QUERY "$@"
  

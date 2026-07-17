@@ -16,6 +16,10 @@ class FAISSIndexing:
         self.output_path = f"index/{device_mode}_{dataset_size}/"
         if self.mode == AWS:
             self.output_path = f"s3://{S3_BUCKET}/" + self.output_path
+        
+        self.flatip_path = self.output_path + f"{INDEX_FLATIP}.index"
+        self.ivf_path = self.output_path + f"{INDEX_IVF}.index"
+        self.hnsw_path = self.output_path + f"{INDEX_HNSW}.index"
     
     def _s3_key_exists(self, key):
         s3_client = boto3.client("s3")
@@ -62,23 +66,21 @@ class FAISSIndexing:
         return faiss.read_index(path)
 
     def generate_flat_ip(self, reload, embeddings, dataset_size):
-        path = self.output_path + f"{INDEX_FLATIP}.index"
-        if reload == 1 and self._exists(path):
+        if reload == 1 and self._exists(self.flatip_path):
             print(f"Load indexing ({INDEX_FLATIP}) from disk")
-            return self.load(path)
+            return self.load(self.flatip_path)
 
         embeddings = np.array(embeddings).astype('float32')
         index = faiss.IndexFlatIP(embeddings.shape[1])
         index.add(embeddings)
 
-        self.save(index, path)
+        self.save(index, self.flatip_path)
         return index
 
     def generate_ivf_flat(self, reload, embeddings, dataset_size, nlist=256):
-        path = self.output_path + f"{INDEX_IVF}.index"
-        if reload == 1 and self._exists(path):
+        if reload == 1 and self._exists(self.ivf_path):
             print(f"Load indexing ({INDEX_IVF}) from disk")
-            return self.load(path)
+            return self.load(self.ivf_path)
 
         embeddings = np.array(embeddings).astype('float32')
         dim = embeddings.shape[1]
@@ -93,14 +95,13 @@ class FAISSIndexing:
         index.train(embeddings)
         index.add(embeddings)
 
-        self.save(index, path)
+        self.save(index, self.ivf_path)
         return index
 
     def generate_hnsw_flat(self, reload, embeddings, dataset_size, M=32):
-        path = self.output_path + f"{INDEX_HNSW}.index"
-        if reload == 1 and self._exists(path):
+        if reload == 1 and self._exists(self.hnsw_path):
             print(f"Load indexing ({INDEX_HNSW}) from disk")
-            return self.load(path)
+            return self.load(self.hnsw_path)
 
         embeddings = np.array(embeddings).astype('float32')
         dim = embeddings.shape[1]
@@ -108,5 +109,5 @@ class FAISSIndexing:
         index = faiss.IndexHNSWFlat(dim, M, faiss.METRIC_INNER_PRODUCT)
         index.add(embeddings)
 
-        self.save(index, path)
+        self.save(index, self.hnsw_path)
         return index
