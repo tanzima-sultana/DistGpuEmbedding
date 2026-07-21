@@ -2,14 +2,22 @@
 set -e
 echo "Starting bootstrap..."
 
+# Git install
+sudo yum install -y git
+
+# Install dataset
+sudo pip3 install --no-cache-dir datasets
+
+# Install s3fs
+sudo pip3 install --no-cache-dir s3fs
+
 # --- Install torch (CUDA 12.8 build, verified against driver 560.35.03 / CUDA 12.6) ---
 sudo pip3 install --no-cache-dir torch==2.8.0 --index-url https://download.pytorch.org/whl/cu128
 
 # --- faiss-gpu requires numpy<2 (ABI incompatibility with numpy 2.x, verified empirically) ---
 sudo pip3 install --no-cache-dir "numpy<2"
 
-# --- faiss-gpu only. Do NOT install faiss-cpu alongside it — they share the same
-#     'faiss' module namespace and silently overwrite each other, breaking GPU support. ---
+# --- faiss-gpu only. 
 sudo pip3 install --no-cache-dir faiss-gpu
 
 # --- Embedding stack ---
