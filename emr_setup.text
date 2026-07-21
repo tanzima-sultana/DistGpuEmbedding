@@ -49,28 +49,23 @@ EMR CLUSTER SETUP
 
 4. Bootstrap script (Spark only):
 
-   #!/bin/bash
-   set -e
-   echo "Starting bootstrap..."
-   sudo pip3 install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
-   sudo pip3 install --no-cache-dir \
-       sentence-transformers==2.7.0 \
-       transformers==4.40.0 \
-       faiss-cpu \
-       tqdm \
-       pyyaml
-   echo "Bootstrap complete"
-   
-   with GPU
-   
    	#!/bin/bash
 	set -e
 	echo "Starting bootstrap..."
 
-	# --- Install torch (CUDA 12.8 build, verified against driver 560.35.03 / CUDA 12.6) ---
-	sudo pip3 install --no-cache-dir torch==2.8.0 --index-url https://download.pytorch.org/whl/cu128
+	# Git install
+	sudo yum install -y git
 
-	# --- faiss-gpu requires numpy<2 (ABI incompatibility with numpy 2.x, verified empirically) ---
+	# Install dataset (--ignore-installed filelock avoids rpm-vs-pip uninstall conflict on this AMI)
+	sudo pip3 install --no-cache-dir --ignore-installed filelock datasets
+
+	# Install s3fs
+	sudo pip3 install --no-cache-dir s3fs
+
+	# --- Install torch (CUDA 12.6 build, verified against driver 560.35.03 / CUDA 12.6 on this AMI) ---
+	sudo pip3 install --no-cache-dir torch==2.8.0 --index-url https://download.pytorch.org/whl/cu126
+
+	# --- faiss-gpu requires numpy<2 (confirmed empirically: faiss 1.7.2 swig_ptr rejects numpy 2.x arrays) ---
 	sudo pip3 install --no-cache-dir "numpy<2"
 
 	# --- faiss-gpu only. Do NOT install faiss-cpu alongside it — they share the same
@@ -83,18 +78,25 @@ EMR CLUSTER SETUP
 	# --- Utilities ---
 	sudo pip3 install --no-cache-dir tqdm pyyaml
 
-	# --- Persist LD_LIBRARY_PATH for nvidia .so files (cupti, nccl, cudnn, etc.)
+	# --- Persist LD_LIBRARY_PATH for nvidia .so files (cusparselt, cudnn, nccl, etc.)
 	#     Required because torch's pip-bundled nvidia-*-cu12 packages don't register
 	#     themselves on the system linker path by default. Written to /etc/environment
-	#     (not .bashrc) so it applies to non-interactive Spark executor processes too. ---
-	NVIDIA_LIB_PATHS=$(python3 -c "import nvidia, os; print(':'.join(os.path.join(os.path.dirname(nvidia.__file__), d, 'lib') for d in os.listdir(os.path.dirname(nvidia.__file__))))")
-	echo "LD_LIBRARY_PATH=${NVIDIA_LIB_PATHS}" | sudo tee -a /etc/environment
+	#     (not .bashrc) so it applies to non-interactive Spark executor processes too.
+	#     Filters out non-package entries (__pycache__, __init__.py) that a naive
+	#     os.listdir() would otherwise include as bogus paths. ---
+	NVIDIA_LIB_PATHS=$(python3 -c "
+	import nvidia, os
+	base = os.path.dirname(nvidia.__file__)
+	dirs = [d for d in os.listdir(base) if os.path.isdir(os.path.join(base, d)) and not d.startswith('__')]
+	print(':'.join(os.path.join(base, d, 'lib') for d in dirs))
+	")
+	echo "LD_LIBRARY_PATH=${NVIDIA_LIB_PATHS}" | sudo tee /etc/environment > /dev/null
 
 	echo "Bootstrap complete"
 
 5. SSH access
    - chmod 400 your-key.pem
-   - ssh -i AWS_KEYS/emr-gpu.pem hadoop@ec2-3-234-142-73.compute-1.amazonaws.com
+   - ssh -i AWS_KEYS/emr-gpu.pem hadoop@<master-public-ip>.compute-1.amazonaws.com
    
 ATTACH EMR STUDIO TO CLUSTER
 
@@ -118,6 +120,28 @@ ATTACH EMR STUDIO TO CLUSTER
    - Cluster security group: leave default
    - Workspace security group: leave default
    - Runtime role: leave blank
+
+
+Update SSH config with new master public IP
+nano ~/.ssh/config
+Entry format:
+Host emr-master
+HostName <new-master-public-ip>
+User hadoop
+IdentityFile /home/tanzima/Documents/AI/AWS_KEYS/emr-gpu.pem
+Connect from VS Code
+Open VS Code, Remote-SSH: Connect to Host, select emr-master
+Set git identity (run in VS Code terminal once connected)
+git config --global user.name "your-name"
+git config --global user.email "your-email@example.com"
+Clone the repo
+git clone <your-repo-url>
+Verify the clone is actually complete before doing anything else
+cd DistGpuEmbedding
+git status
+git log --oneline -5
+du -sh .git/
+If git log fails or .git/ size looks too small, stop and re-clone before running anything else.
    - Launch Workspace
    
    
