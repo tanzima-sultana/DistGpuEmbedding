@@ -23,5 +23,7 @@ INDEX_HNSW="HNSWFlatIndex"
 
 S3_BUCKET = "dist-gpu-embedding"
 
+S3_DATASET = "s3://dist-gpu-embedding/raw-wikipedia/*.parquet"
+
 EC2_RATE_G4DN_XLARGE = 0.526  
 EMR_MARKUP_G4DN_XLARGE = 0.07  

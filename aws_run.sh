@@ -12,7 +12,12 @@ NUM_PARTITIONS=4
 MODEL="all-MiniLM-L6-v2" #all-mpnet-base-v2
  
 # ---- Embedding ----
-python3 scripts/run_embedding.py $MODE $DEVICE_MODE $RELOAD $DATASET_SIZE $BATCH_SIZE $NUM_PARTITIONS $MODEL "$@"
+
+spark-submit \
+  --deploy-mode client \
+  --conf spark.executorEnv.TRANSFORMERS_CACHE=/tmp/transformers_cache \
+  --conf spark.executorEnv.HF_HOME=/tmp/hf_home \
+  scripts/run_embedding.py $MODE $DEVICE_MODE $RELOAD $DATASET_SIZE $BATCH_SIZE $NUM_PARTITIONS $MODEL
  
 # ---- Indexing ----
 #python3 scripts/run_indexing.py $MODE $DEVICE_MODE $RELOAD $DATASET_SIZE "$@"
