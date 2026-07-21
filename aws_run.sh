@@ -14,7 +14,7 @@ BATCH_SIZE=256
 NUM_PARTITIONS=4
 MODEL="all-MiniLM-L6-v2" #all-mpnet-base-v2
 NO_QUERY=50
-LOG_FILE="run_log.txt"
+LOG_FILE="log.txt"
 
 # ---- Package code for workers ----
 rm -f project.zip
