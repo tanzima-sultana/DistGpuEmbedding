@@ -37,6 +37,25 @@ print(':'.join(os.path.join(base, d, 'lib') for d in dirs))
 rm -f "$LOG_FILE"
 
 # ---- Full pipeline (embedding + indexing + evaluation) ----
+# spark-submit \
+#   --deploy-mode client \
+#   --py-files project.zip \
+#   --conf spark.executor.memory=6g \
+#   --conf spark.executor.memoryOverhead=1g \
+#   --conf spark.driver.memory=4g \
+#   --conf spark.executorEnv.TRANSFORMERS_CACHE=/tmp/transformers_cache \
+#   --conf spark.executorEnv.HF_HOME=/tmp/hf_home \
+#   --conf spark.executorEnv.PYSPARK_PYTHON=/usr/bin/python3 \
+#   --conf spark.pyspark.python=/usr/bin/python3 \
+#   --conf spark.pyspark.driver.python=/usr/bin/python3 \
+#   --conf spark.executorEnv.LD_LIBRARY_PATH="${NVIDIA_LIB_PATHS}" \
+#   --conf spark.driverEnv.LD_LIBRARY_PATH="${NVIDIA_LIB_PATHS}" \
+#   --conf spark.dynamicAllocation.enabled=false \
+#   --conf spark.eventLog.enabled=false \
+#   scripts/run_pipeline.py $MODE $DEVICE_MODE $RELOAD $DATASET_SIZE $BATCH_SIZE $NUM_PARTITIONS $MODEL $NO_QUERY "$@" \
+#   > "$LOG_FILE" 2>&1
+
+# ---- Embedding  ----
 spark-submit \
   --deploy-mode client \
   --py-files project.zip \
@@ -52,7 +71,7 @@ spark-submit \
   --conf spark.driverEnv.LD_LIBRARY_PATH="${NVIDIA_LIB_PATHS}" \
   --conf spark.dynamicAllocation.enabled=false \
   --conf spark.eventLog.enabled=false \
-  scripts/run_pipeline.py $MODE $DEVICE_MODE $RELOAD $DATASET_SIZE $BATCH_SIZE $NUM_PARTITIONS $MODEL $NO_QUERY "$@" \
+  scripts/run_embedding.py $MODE $DEVICE_MODE $RELOAD $DATASET_SIZE $BATCH_SIZE $NUM_PARTITIONS $MODEL \
   > "$LOG_FILE" 2>&1
 
 echo "Run complete. Log saved to $LOG_FILE"
