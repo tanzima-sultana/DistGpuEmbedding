@@ -15,13 +15,13 @@ Raw Wikipedia Corpus (S3)
 v
 +--------------------------------------------+
 |      Apache Spark Cluster (AWS EMR)         |
-|                                              |
+|                                             |
 |  Partition 0      Partition 1      ...      |
 |  GPU Embed         GPU Embed                |
 |         mapPartitions()                     |
 |   (model loaded once per partition)         |
-|                                              |
-|   DISTRIBUTED -- scales with worker count    |
+|                                             |
+|   DISTRIBUTED -- scales with worker count   |
 +--------------------------------------------+
 |
 v
@@ -30,9 +30,9 @@ Embeddings (S3, Parquet)
 v
 +--------------------------------------------+
 |       FAISS Index Build (Driver)            |
-|   Flat (exact) . IVFFlat . HNSWFlat          |
-|                                              |
-|      SINGLE-NODE -- not distributed          |
+|   Flat (exact) . IVFFlat . HNSWFlat         |
+|                                             |
+|      SINGLE-NODE -- not distributed         |
 +--------------------------------------------+
 |
 v
@@ -59,5 +59,86 @@ This means throughput scales with the number of worker nodes: more workers → m
 |----------|-----------------------|--------------|------------------|
 | Local    | PySpark (single node) | CPU or GPU   | Local filesystem |
 | AWS EMR  | YARN cluster          | Tesla T4 GPU | Amazon S3        |
+
+## Tech Stack
+
+**AI & Embeddings**
+- [sentence-transformers](https://www.sbert.net/) — transformer-based text embedding models (`all-MiniLM-L6-v2`)
+- PyTorch (CUDA 12.6) — GPU-accelerated inference
+- FAISS — vector similarity search (Flat, IVFFlat, HNSWFlat)
+
+**Distributed Computing**
+- Apache Spark (PySpark) — distributed `mapPartitions` embedding job
+- YARN — cluster resource management on AWS EMR
+
+**Cloud & Infrastructure**
+- AWS EMR — managed Spark cluster (1x primary + N core nodes)
+- AWS S3 — corpus, embeddings, and index storage
+- AWS IAM — role-based access control
+
+**Programming & Libraries**
+- Python 3.9
+- NumPy (<2.0, pinned for FAISS ABI compatibility)
+- tqdm, PyYAML
+- Boto3 / s3fs (AWS access)
+
+**Tooling**
+- `bootstrap.sh` — EMR node dependency installation (torch, FAISS, sentence-transformers), run as an EMR bootstrap action at cluster launch
+- `aws_run.sh` — single-command pipeline runner: packages code, computes NVIDIA library paths, submits the Spark job
+
+## Performance Summary
+
+*(To be added)*
+
+## Cost Analysis
+
+*(To be added)*
+
+## Installation / Setup
+
+### Prerequisites
+
+- Python 3.9
+- AWS account with EMR, EC2, S3, and IAM access
+- AWS CLI configured (`aws configure`)
+- CUDA-capable GPU (optional for local runs — falls back to CPU)
+- `g4dn.xlarge` instance quota in your target region (check Service Quotas → EC2 → Running On-Demand G and VT instances)
+
+### Local Setup
+
+Clone the repository:
+```bash
+git clone https://github.com/tanzima-sultana/DistGpuEmbedding.git
+cd DistGpuEmbedding
+```
+
+Install dependencies:
+```bash
+pip install -r requirements.txt
+```
+
+*(Confirm: do you have a `requirements.txt` in this project, or should this section point to the individual pip installs from `bootstrap.sh` instead, since local setup might differ from the EMR dependency list?)*
+
+### AWS EMR Setup
+
+**Step 1 — Upload bootstrap script to S3:**
+```bash
+aws s3 cp bootstrap.sh s3://your-bucket-name/bootstrap/bootstrap.sh
+```
+
+**Step 2 — Create EMR cluster** (console or CLI):
+- Applications: `Hadoop`, `Spark`
+- Primary node: `[instance type]` x1
+- Core nodes: `g4dn.xlarge` x[N]
+- Bootstrap action: `s3://your-bucket-name/bootstrap/bootstrap.sh`
+- EC2 key pair: your key pair
+- Service role: `EMR_DefaultRole`
+- EC2 instance profile: `EMR_EC2_DefaultRole`
+
+**Step 3 — SSH into master and clone the repo:**
+```bash
+git clone https://github.com/tanzima-sultana/DistGpuEmbedding.git
+cd DistGpuEmbedding
+```
 
 
