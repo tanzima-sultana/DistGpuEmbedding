@@ -231,5 +231,19 @@ With `spark.dynamicAllocation.enabled` at its default, an executor that finished
 
 **Fix:** `spark.dynamicAllocation.enabled=false` for jobs with a known, fixed task count.
 
+## Future Work / Limitations
+
+- **Indexing and evaluation are not distributed.** FAISS index construction and evaluation both run single-node on the driver, operating on the full embedding set collected from Spark. This works at the scales tested here but would become a bottleneck well beyond 500K vectors. A sharded-index approach (build per-partition indexes, merge or route queries across shards) would be needed to distribute this stage.
+
+- **IVF `nlist` was not scaled with corpus size.** `nlist=256` was used across all dataset sizes tested. A common heuristic (`nlist ≈ 4×sqrt(N)`) would suggest a substantially higher `nlist` at 500K than at 50K — not explored here. Worth revisiting if recall at the largest scale is unsatisfactory.
+
+- **`--deploy-mode client` places the Spark driver on the master node**, which also runs YARN's ResourceManager and HDFS's NameNode. This caused a real failure at 250K scale (see Known Issues). `--deploy-mode cluster`, which runs the driver on a worker node instead, is the more correct architecture for large jobs and should be adopted for future scale-up work.
+
+- **No fault-tolerance / failure-injection testing performed on this iteration.** The previous version of this project included a synthetic partition-failure-and-retry test; it was not rebuilt here due to time/cost constraints. Would be a reasonable local-mode addition — Spark's task retry behavior doesn't require a live cluster to validate.
+
+- **CPU vs GPU comparison was only measured up to 100K documents.** 250K and 500K runs were GPU-only, both for cost reasons and because a CPU run at 250K caused the master-node crash documented under Known Issues. The CPU/GPU speedup trend observed up to 100K (growing from ~4.8x at 5K to ~8.5x at 50K, as fixed Spark overhead amortizes) is not confirmed to hold at larger scale.
+
+- **Single-region, single-cluster testing only.** No multi-AZ, spot-instance, or cross-region resilience testing was performed.
+
 
 
