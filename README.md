@@ -116,8 +116,60 @@ Install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
+## How to Run
 
-*(Confirm: do you have a `requirements.txt` in this project, or should this section point to the individual pip installs from `bootstrap.sh` instead, since local setup might differ from the EMR dependency list?)*
+### Local Run
+
+Run the full pipeline (embedding → indexing → evaluation) with a single command:
+
+```bash
+./run.sh
+```
+
+Edit the variables at the top of `run.sh` to change mode, device, or dataset size:
+
+```bash
+MODE="local"                # local | aws
+DEVICE_MODE="spark-gpu"     # cpu | gpu | spark | spark-gpu | gpu-adaptive
+DATASET_SIZE=5000
+BATCH_SIZE=256
+NUM_PARTITIONS=4
+```
+
+### AWS EMR Run
+
+**Prerequisites:**
+- EMR cluster launched with `bootstrap.sh` attached as a bootstrap action (see [Installation](#installation--setup))
+- Repository cloned onto the EMR master node
+
+**Step 1 — SSH into the cluster's master node:**
+```bash
+ssh -i /path/to/key.pem hadoop@<master-public-ip>
+```
+
+**Step 2 — Configure `aws_run.sh`:**
+```bash
+MODE="aws"
+DEVICE_MODE="spark-gpu"     # cpu | gpu | spark | spark-gpu | gpu-adaptive
+DATASET_SIZE=500000
+BATCH_SIZE=256
+NUM_PARTITIONS=16
+```
+
+**Step 3 — Run the pipeline:**
+```bash
+nohup ./aws_run.sh > /dev/null 2>&1 &
+```
+
+This packages the project code (`project.zip`), computes the NVIDIA library path for CUDA, and submits the job via `spark-submit`. Output is logged to `log.txt` and overwritten on each run.
+
+**Step 4 — Monitor progress:**
+```bash
+tail -f log.txt
+yarn application -list
+```
+
+**Step 5 — Terminate the cluster once finished** — EMR billing continues until the cluster is explicitly terminated, independent of whether a job is actively running.
 
 ### AWS EMR Setup
 
@@ -140,5 +192,7 @@ aws s3 cp bootstrap.sh s3://your-bucket-name/bootstrap/bootstrap.sh
 git clone https://github.com/tanzima-sultana/DistGpuEmbedding.git
 cd DistGpuEmbedding
 ```
+
+
 
 
