@@ -1,0 +1,8 @@
+import glob
+
+S3_BUCKET = "your-bucket-name"
+S3_DATASET = f"s3://{S3_BUCKET}/raw-wikipedia/*.parquet"
+
+DATASET = glob.glob(
+    "/path/to/your/local/huggingface/cache/wikipedia/*.parquet"
+)

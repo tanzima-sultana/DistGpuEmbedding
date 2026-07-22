@@ -4,7 +4,8 @@ import pyarrow.parquet as pq
 
 from src.indexing import FAISSIndexing
 
-from constants import LOCAL, AWS, S3_BUCKET
+from config import S3_BUCKET
+from constants import LOCAL, AWS
 
 if __name__ == "__main__":
     print("\n-------------- Indexing --------------\n")

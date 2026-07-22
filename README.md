@@ -1,12 +1,12 @@
 # DistributedGpuEmbedding
 
-A distributed text embedding pipeline built on **Apache Spark** and **CUDA**, running at scale across GPU-accelerated AWS EMR nodes. Embeds a real-world corpus (Wikipedia, 500K documents) using transformer-based sentence encoders, with FAISS vector indexing (Flat / IVF / HNSW) and retrieval quality evaluation via Recall@k and latency benchmarking. Includes an adaptive OOM-aware batcher, validated locally, for automatic safe batch-size discovery under GPU memory pressure.
+A distributed text embedding pipeline built on Apache Spark and CUDA. It runs across GPU-accelerated AWS EMR nodes and embeds a real Wikipedia corpus of 500K documents using transformer-based sentence encoders. The project also builds FAISS indexes (Flat, IVF, HNSW) and evaluates retrieval quality with Recall@k and latency benchmarks. An adaptive OOM-aware batcher handles GPU memory pressure automatically; it was built and validated locally.
 
 **Key results:**
-- Processed **500K documents** end-to-end on AWS EMR with Tesla T4 GPUs
-- GPU speedup: **[X]x** over CPU (measured up to 100K docs)
-- Scaled to **500K documents** on a GPU-only pipeline, completing in **[X] minutes** at **$[X]** total cost
-- **[X]% Recall@5** at nprobe=32 (IVF) vs **[X]%** (HNSW)
+- Processed **500K documents** end-to-end on AWS EMR with Tesla T4 GPUs, in **10.7 minutes**
+- GPU speedup: **~11x** over CPU (measured at 100K docs)
+- Throughput held steady and even grew slightly as scale increased — **93.9 texts/sec at 5K up to 775.9 texts/sec at 500K**
+- **80.7% Recall@5** at nprobe=32 (IVF) vs **81.0%** (HNSW), measured at 100K docs
 
 ## Architecture
 ```
@@ -51,7 +51,9 @@ Spark's `mapPartitions` splits the input corpus (loaded from S3) into N partitio
 2. All documents in that partition are embedded locally, using the GPU available on that worker node (`spark-gpu` mode) or CPU (`spark` mode).
 3. Resulting embedding vectors are returned to the driver and collected into a single output, written to S3 as Parquet.
 
-This means throughput scales with the number of worker nodes: more workers → more partitions processed in parallel → higher aggregate throughput, up to the point where partition count and cluster size are balanced (too few partitions underutilizes available workers; too many adds per-partition overhead).
+Throughput scales with the number of worker nodes: more workers means more partitions processed in parallel, which means higher aggregate throughput — up to the point where partition count and cluster size are balanced. Too few partitions underutilizes available workers; too many adds per-partition overhead.
+
+The driver-side collection step in stage 3 has its own scaling limits, separate from the embedding computation. See [Known Issues](#known-issues--failure-modes) for details.
 
 ### Deployment Modes
 
@@ -90,47 +92,48 @@ This means throughput scales with the number of worker nodes: more workers → m
 
 ### CPU vs GPU Embedding Throughput
 
-| Scale | Mode | Embedding Time | Throughput (texts/sec) |
+| Scale | Mode | Embedding Time (compute) | Throughput (texts/sec) |
 |---|---|---|---|
-| 5K | Spark (CPU) | 257.66s | 19.4 |
-| 5K | Spark-GPU | 53.23s | 93.9 |
-| 10K | Spark (CPU) | 360.37s | 29.2 |
-| 10K | Spark-GPU | 65.46s | 209.8 |
-| 50K | Spark (CPU) | 967.58s | 52.8 |
-| 50K | Spark-GPU | 114.03s | 561.1 |
-| 100K | Spark (CPU) | 1702.26s | 59.7 |
-| 100K | Spark-GPU | 182.64s | 659.0 |
+| 10K | Spark (CPU) | 342.69s | 29.2 |
+| 10K | Spark-GPU | 47.67s | 209.8 |
+| 50K | Spark (CPU) | 947.42s | 52.8 |
+| 50K | Spark-GPU | 89.10s | 561.1 |
+| 100K | Spark (CPU) | 1674.29s | 59.7 |
+| 100K | Spark-GPU | 151.75s | 659.0 |
 
-**GPU speedup grew from ~4.8x at 5K to ~9.3x at 100K**, as fixed Spark session/serialization overhead is amortized across a larger workload. See [Cost Analysis](#cost-analysis) for per-run cost figures.
+*Times reflect embedding compute only (model inference), excluding dataset load and S3 write.*
+
+**GPU speedup grew from ~7.2x at 10K to ~11.0x at 100K**, as fixed Spark session/serialization overhead is amortized across a larger workload. See [Cost Analysis](#cost-analysis) for per-run cost figures.
 
 ### GPU-Only Scaling (250K–500K)
 
-| Scale | Embedding Time | Throughput (texts/sec) |
+| Scale | Embedding Time (compute) | Throughput (texts/sec) |
 |---|---|---|
-| 250K | *(pending)* | *(pending)* |
-| 500K | *(pending)* | *(pending)* |
+| 250K | 350.94s | 712.4 |
+| 500K | 644.42s | 775.9 |
 
-CPU comparison was not run at this scale — see [Known Issues](#known-issues--failure-modes) for the master-node crash encountered during an earlier 250K CPU attempt, which led to the decision to run 250K and 500K on GPU only.
+Throughput kept climbing all the way to 500K rather than plateauing, suggesting the architecture hasn't hit its scaling ceiling within this range. CPU comparison was not run at 250K/500K — see [Known Issues](#known-issues--failure-modes) for the master-node crash encountered during an earlier 250K CPU attempt, which led to the decision to run these two sizes on GPU only.
 
 ### Index Recall / Latency (IVF vs HNSW)
 
 | Scale | IVF Recall@5 (nprobe=32) | HNSW Recall@5 | IVF p50 (nprobe=32) | HNSW p50 |
 |---|---|---|---|---|
-| 5K | 0.830 | 0.817 | 4.349 ms | 0.411 ms |
 | 10K | 0.823 | 0.833 | 0.996 ms | 0.267 ms |
 | 50K | 0.830 | 0.803 | 4.349 ms | 0.411 ms |
 | 100K | 0.807 | 0.810 | 8.543 ms | 0.430 ms |
 
-Recall does not improve monotonically with scale — this reflects natural variance from a fixed 50-query eval sample against a growing corpus, not a methodology issue.
+Recall does not improve monotonically with scale — this reflects natural variance from a fixed 50-query eval sample against a growing corpus, not a methodology issue. Indexing/evaluation were not run at 250K/500K scale (see [Known Issues](#known-issues--failure-modes) — single-node driver memory limits during large-scale `collect()`).
 
 ## Cost Analysis
 
 **Rate assumptions:**
 - EC2 on-demand, g4dn.xlarge, us-east-1: **$0.526/hr** (confirmed against AWS pricing)
-- EMR per-instance surcharge: **~$0.07/hr** (estimate — not verified against official EMR pricing page; actual costs may differ slightly)
-- Cluster: 1 primary + 2 core nodes (g4dn.xlarge) throughout
+- EC2 on-demand, r5.xlarge, us-east-1: **$0.252/hr** (confirmed against AWS pricing)
+- EMR per-instance surcharge: **~$0.07/hr** (estimate — not verified against official EMR pricing page)
 
-### Cost by Scale and Mode
+### Full Pipeline Cost (10K–100K)
+
+Cluster: 1 primary + 2 core nodes, all g4dn.xlarge. Cost covers embedding, indexing, and evaluation.
 
 | Scale | Mode | Cost |
 |---|---|---|
@@ -140,10 +143,44 @@ Recall does not improve monotonically with scale — this reflects natural varia
 | 50K | Spark-GPU | $0.0727 |
 | 100K | Spark (CPU) | $0.9104 |
 | 100K | Spark-GPU | $0.1263 |
-| 250K | Spark-GPU | *(pending)* |
-| 500K | Spark-GPU | *(pending)* |
 
-**GPU runs were consistently 5–7x cheaper than CPU runs at the same scale** — not because GPU compute is cheaper per hour, but because GPU finishes so much faster that total cluster-hours billed is far lower. This is the practical argument for GPU at scale: it's not just faster, it's cheaper in aggregate despite running on more expensive hardware.
+GPU runs cost 5–7x less than CPU runs at the same scale. This came from shorter runtime, not a lower hourly rate — GPU instances cost more per hour but finish faster.
+
+### Embedding-Only Cost (250K–500K)
+
+Cluster: 1 primary (r5.xlarge) + 2 core nodes (g4dn.xlarge). Cost covers embedding only — indexing and evaluation were not run at this scale. 
+
+| Scale | Mode | Embedding Cost |
+|---|---|---|
+| 250K | Spark-GPU | $0.15 |
+| 500K | Spark-GPU | $0.27 |
+
+## Repository Structure
+
+```
+DistGpuEmbedding/
+├── aws/
+│   └── bootstrap.sh          # EMR bootstrap action: installs torch, faiss-gpu,
+│                              # sentence-transformers, sets LD_LIBRARY_PATH
+├── src/
+│   ├── dataset.py             # Dataset loading and S3 caching
+│   ├── embedding.py           # Embedding class: CPU/GPU/Spark/Spark-GPU modes
+│   ├── indexing.py            # FAISSIndexing class: Flat, IVF, HNSW build
+│   └── evaluation.py          # Evaluation class: Recall@k, latency, cost
+├── scripts/
+│   ├── run_embedding.py       # Entry point: embedding only
+│   ├── run_indexing.py        # Entry point: indexing only
+│   ├── run_evaluation.py      # Entry point: evaluation only
+│   └── run_pipeline.py        # Entry point: full pipeline (embed + index + eval)
+├── data/                      # Generated: cached dataset parquet files (gitignored)
+├── embeddings/                # Generated: embedding output parquet files (gitignored)
+├── index/                     # Generated: FAISS index files (gitignored)
+├── constants.py                # Shared constants (modes, S3 bucket, cost rates)
+├── run.sh                      # Local pipeline runner
+├── aws_run.sh                  # AWS EMR pipeline runner
+├── requirements.txt
+└── README.md
+```
 
 ## Installation / Setup
 
@@ -153,7 +190,8 @@ Recall does not improve monotonically with scale — this reflects natural varia
 - AWS account with EMR, EC2, S3, and IAM access
 - AWS CLI configured (`aws configure`)
 - CUDA-capable GPU (optional for local runs — falls back to CPU)
-- `g4dn.xlarge` instance quota in your target region (check Service Quotas → EC2 → Running On-Demand G and VT instances)
+- `g4dn.xlarge` and `r5.xlarge`
+
 
 ### Local Setup
 
@@ -172,14 +210,14 @@ pip install -r requirements.txt
 
 **Step 1 — Upload bootstrap script to S3:**
 ```bash
-aws s3 cp bootstrap.sh s3://your-bucket-name/bootstrap/bootstrap.sh
+aws s3 cp bootstrap.sh s3://bucket-name/bootstrap/bootstrap.sh
 ```
 
 **Step 2 — Create EMR cluster** (console or CLI):
 - Applications: `Hadoop`, `Spark`
 - Primary node: `[instance type]` x1
 - Core nodes: `g4dn.xlarge` x[N]
-- Bootstrap action: `s3://your-bucket-name/bootstrap/bootstrap.sh`
+- Bootstrap action: `s3://bucket-name/bootstrap/bootstrap.sh`
 - EC2 key pair: your key pair
 - Service role: `EMR_DefaultRole`
 - EC2 instance profile: `EMR_EC2_DefaultRole`
@@ -199,7 +237,7 @@ Run the full pipeline (embedding → indexing → evaluation) with a single comm
 ./run.sh
 ```
 
-Edit the variables at the top of `run.sh` to change mode, device, or dataset size:
+Edit the variables at the top of `run.sh` to make changes:
 
 ```bash
 MODE="local"                # local | aws
@@ -248,53 +286,75 @@ yarn application -list
 
 ### FAISS + NumPy 2.x ABI incompatibility
 
-`faiss-gpu==1.7.2`'s SWIG bindings fail silently with numpy 2.x — `index.add()` raises `ValueError: input not a numpy array` even when passed a genuine numpy array, because numpy 2.x changed internal array representation in a way `swig_ptr` doesn't recognize.
+`faiss-gpu==1.7.2`'s SWIG bindings fail with numpy 2.x. `index.add()` raises `ValueError: input not a numpy array` even when passed a genuine numpy array, because numpy 2.x changed its internal array representation in a way `swig_ptr` doesn't recognize.
 
-**Fix:** pin `numpy<2` (numpy 1.26.4 used throughout this project). Confirmed via direct reproduction — installs cleanly with numpy 2.x, fails only at runtime on the first real FAISS operation.
+**Fix:** pin `numpy<2` (numpy 1.26.4 used throughout this project).
 
 ### torch/CUDA version must match the driver, not just "latest"
 
-Installing `torch` with a CUDA index newer than the instance's actual driver support (e.g. `cu128` wheels on a driver that supports up to CUDA 12.6) causes `ImportError: libcusparseLt.so.0: cannot open shared object file` at `import torch` — the bundled NVIDIA runtime libraries are ABI-incompatible with the installed driver.
+Installing `torch` with a CUDA index newer than the instance's driver support causes `ImportError: libcusparseLt.so.0: cannot open shared object file` at `import torch`.
 
-**Fix:** match the `--index-url` CUDA version to `nvidia-smi`'s reported CUDA Version, not to whatever's newest. Verified against Driver 560.35.03 / CUDA 12.6 → `torch==2.8.0 --index-url https://download.pytorch.org/whl/cu126`.
+**Fix:** match the `--index-url` CUDA version to `nvidia-smi`'s reported CUDA Version. This project uses `torch==2.8.0 --index-url https://download.pytorch.org/whl/cu126`, verified against driver 560.35.03 / CUDA 12.6.
 
-### `LD_LIBRARY_PATH` via `/etc/environment` doesn't reach Spark executors reliably
+### `LD_LIBRARY_PATH` via `/etc/environment` doesn't reach Spark executors
 
-Torch's pip-bundled `nvidia-*-cu12` packages don't register themselves on the system linker path. Writing `LD_LIBRARY_PATH` to `/etc/environment` (the standard fix) only takes effect for new PAM login sessions — it does not reliably propagate to YARN-spawned Spark executor processes, which aren't login shells.
+Writing `LD_LIBRARY_PATH` to `/etc/environment` only takes effect for new login sessions. It doesn't propagate to YARN-spawned Spark executor processes.
 
-**Fix:** compute the NVIDIA library path in `aws_run.sh` and pass it explicitly via `--conf spark.executorEnv.LD_LIBRARY_PATH=...` and `--conf spark.driverEnv.LD_LIBRARY_PATH=...` on every `spark-submit` call, rather than relying on `/etc/environment` propagation.
+**Fix:** compute the NVIDIA library path in `aws_run.sh` and pass it explicitly via `--conf spark.executorEnv.LD_LIBRARY_PATH=...` and `--conf spark.driverEnv.LD_LIBRARY_PATH=...` on every `spark-submit` call.
 
-### OOM at scale with fixed partition count
+### OOM at 250K with a fixed partition count
 
-Running embedding at 250K documents with `NUM_PARTITIONS=4` (tuned for 5K–50K runs) caused a `java.lang.OutOfMemoryError: Java heap space` on task serialization — each partition held too large a data slice for the default executor JVM heap.
+Running embedding at 250K documents with `NUM_PARTITIONS=4` (tuned for 5K–50K) caused `java.lang.OutOfMemoryError: Java heap space` during task serialization.
 
-**Fix:** partition count must scale with dataset size, not stay fixed. Increased to `NUM_PARTITIONS=16` and set explicit `spark.executor.memory` / `spark.executor.memoryOverhead` / `spark.driver.memory` rather than relying on Spark defaults.
+**Fix:** partition count needs to scale with dataset size. Increased to 16–24 partitions, with explicit `spark.executor.memory` and `spark.executor.memoryOverhead` instead of Spark defaults.
 
 ### Master-node CPU starvation crashes the driver via HDFS lease timeout
 
-At 250K scale with `--deploy-mode client`, the Spark driver, HDFS NameNode, and Spark event logging all compete for CPU on the master node. Under sustained load, the NameNode couldn't service the driver's lease-renewal RPC within the 60s timeout, causing a cascading failure: `SocketTimeoutException` → HDFS lease abort → `SparkContext.stop()` → job death, roughly an hour into the run.
+At 250K scale with `--deploy-mode client`, the Spark driver, HDFS NameNode, and Spark event logging competed for CPU on the master node. Under load, the NameNode couldn't service the driver's lease-renewal RPC within 60 seconds, causing a cascading failure: `SocketTimeoutException` → HDFS lease abort → `SparkContext.stop()`.
 
-**Fix:** disable Spark event logging (`spark.eventLog.enabled=false`, not needed without Spark History Server) and disable dynamic allocation (`spark.dynamicAllocation.enabled=false`, which was reclaiming idle executors mid-stage and worsening the imbalance). `--deploy-mode cluster` (running the driver on a worker instead of master) is a more correct long-term fix, noted under Future Work.
+**Fix:** disabled Spark event logging (`spark.eventLog.enabled=false`) and dynamic allocation (`spark.dynamicAllocation.enabled=false`, which was reclaiming idle executors mid-stage and worsening the imbalance).
+
+### Driver OOM-killed on a 16GB primary node at 250K+
+
+Collecting 250K embedding vectors back to the driver via Spark's `collect()` used roughly 5.6GB of resident memory in the Python process, confirmed from the kernel log:
+
+```
+Out of memory: Killed process 50816 (python3) total-vm:23014832kB, anon-rss:5864788kB
+```
+
+The process was killed by the Linux OOM killer, not a JVM-level error. It failed silently with no traceback in the application log, visible only via `dmesg`.
+
+**Fix:** switched the primary node from `g4dn.xlarge` (16GB) to `r5.xlarge` (32GB) for the 250K and 500K runs.
+
+### `spark.driver.maxResultSize` default ceiling at 500K
+
+At 500K documents, the combined serialized size of collected task results (1046.6 MiB) exceeded Spark's default `spark.driver.maxResultSize` of 1024 MiB, aborting the job:
+
+```
+Total size of serialized results of 15 tasks (1046.6 MiB) is bigger than spark.driver.maxResultSize (1024.0 MiB)
+```
+
+**Fix:** raised `spark.driver.maxResultSize` to 4g, with `spark.driver.memory` raised to 10g to keep clear headroom between the two settings.
 
 ### Dynamic allocation reclaims executors mid-stage
 
-With `spark.dynamicAllocation.enabled` at its default, an executor that finished its assigned tasks slightly early was reclaimed as "idle" while the job's total task count wasn't yet complete — forcing the remaining tasks onto a single executor and roughly doubling the tail-end runtime.
+With `spark.dynamicAllocation.enabled` at its default, an executor that finished its assigned tasks slightly early was reclaimed as idle while the job's total task count wasn't yet complete, forcing the remaining tasks onto a single executor and roughly doubling the tail-end runtime.
 
 **Fix:** `spark.dynamicAllocation.enabled=false` for jobs with a known, fixed task count.
 
 ## Future Work / Limitations
 
-- **Indexing and evaluation are not distributed.** FAISS index construction and evaluation both run single-node on the driver, operating on the full embedding set collected from Spark. This works at the scales tested here but would become a bottleneck well beyond 500K vectors. A sharded-index approach (build per-partition indexes, merge or route queries across shards) would be needed to distribute this stage.
+- Indexing and evaluation are not distributed. FAISS index construction and evaluation both run single-node on the driver, on the full embedding set collected from Spark. This works at the scales tested here but would become a bottleneck well beyond 500K vectors. A sharded-index approach would be needed to distribute this stage.
 
-- **IVF `nlist` was not scaled with corpus size.** `nlist=256` was used across all dataset sizes tested. A common heuristic (`nlist ≈ 4×sqrt(N)`) would suggest a substantially higher `nlist` at 500K than at 50K — not explored here. Worth revisiting if recall at the largest scale is unsatisfactory.
+- IVF `nlist` was not scaled with corpus size. `nlist=256` was used across all dataset sizes tested. A common heuristic (`nlist ≈ 4×sqrt(N)`) would suggest a substantially higher `nlist` at larger scale.
 
-- **`--deploy-mode client` places the Spark driver on the master node**, which also runs YARN's ResourceManager and HDFS's NameNode. This caused a real failure at 250K scale (see Known Issues). `--deploy-mode cluster`, which runs the driver on a worker node instead, is the more correct architecture for large jobs and should be adopted for future scale-up work.
+- `--deploy-mode client` places the Spark driver on the primary node, which also runs YARN's ResourceManager and HDFS's NameNode. This caused a real failure at 250K scale (see Known Issues). `--deploy-mode cluster` runs the driver on a worker node instead and is the more correct architecture for large jobs.
 
-- **No fault-tolerance / failure-injection testing performed on this iteration.** The previous version of this project included a synthetic partition-failure-and-retry test; it was not rebuilt here due to time/cost constraints. Would be a reasonable local-mode addition — Spark's task retry behavior doesn't require a live cluster to validate.
+- No fault-tolerance or failure-injection testing was performed on this iteration.
 
-- **CPU vs GPU comparison was only measured up to 100K documents.** 250K and 500K runs were GPU-only, both for cost reasons and because a CPU run at 250K caused the master-node crash documented under Known Issues. The CPU/GPU speedup trend observed up to 100K (growing from ~4.8x at 5K to ~8.5x at 50K, as fixed Spark overhead amortizes) is not confirmed to hold at larger scale.
+- CPU vs GPU comparison was only measured up to 100K documents. 250K and 500K runs were GPU-only, both for cost reasons and because a CPU run at 250K caused the master-node crash documented under Known Issues.
 
-- **Single-region, single-cluster testing only.** No multi-AZ, spot-instance, or cross-region resilience testing was performed.
+- Indexing and evaluation were only run up to 100K documents, due to driver memory limits during `collect()` at larger scale.
 
-
+- Single-region, single-cluster testing only. No multi-AZ, spot-instance, or cross-region resilience testing was performed.
 

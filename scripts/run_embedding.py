@@ -72,4 +72,4 @@ if __name__ == "__main__":
         embeddings = embedder.embed_spark_aws(reload, dataset, dataset_size, batch_size, no_partition, device)
 
     t2 = time.time() - s2
-    print(f"---- Embeddings time : mode : {mode} : {device_mode} : time : {t1:.2f}s")
+    print(f"---- Embeddings time : mode : {mode} : {device_mode} : time : {t2:.2f}s")

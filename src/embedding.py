@@ -9,7 +9,8 @@ from sentence_transformers import SentenceTransformer
 from pyspark.sql import SparkSession
 import boto3
 
-from constants import LOCAL, AWS, S3_BUCKET
+from config import S3_BUCKET
+from constants import LOCAL, AWS
 
 class Embedding:
     def __init__(self, mode, device_mode, dataset_size, model_name):

@@ -1,7 +1,9 @@
 import os
 import boto3
 from datasets import load_dataset, load_from_disk
-from constants import SEED, DATASET, S3_DATASET, DATA_PATH, S3_BUCKET
+
+from config import DATASET, S3_DATASET, S3_BUCKET
+from constants import SEED, DATA_PATH
 
 class Dataset:
     def __init__(self, size):

@@ -5,7 +5,8 @@ import faiss
 import boto3
 import tempfile
 
-from constants import LOCAL, AWS, INDEX_FLATIP, INDEX_IVF, INDEX_HNSW, S3_BUCKET
+from config import S3_BUCKET
+from constants import LOCAL, AWS, INDEX_FLATIP, INDEX_IVF, INDEX_HNSW
 
 class FAISSIndexing:
     def __init__(self, mode, device_mode, dataset_size):

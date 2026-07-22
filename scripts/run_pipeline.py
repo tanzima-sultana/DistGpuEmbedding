@@ -11,7 +11,8 @@ from src.embedding import Embedding
 from src.indexing import FAISSIndexing
 from src.evaluation import Evaluation
 
-from constants import SEED, LOCAL, AWS, CPU, GPU, SPARK, SPARK_GPU, GPU_ADAPTIVE, S3_BUCKET, INDEX_FLATIP, INDEX_IVF, INDEX_HNSW
+from config import S3_BUCKET
+from constants import SEED, LOCAL, AWS, CPU, GPU, SPARK, SPARK_GPU, GPU_ADAPTIVE, INDEX_FLATIP, INDEX_IVF, INDEX_HNSW
 
 if __name__ == "__main__":
     print("\n----------- Dist Gpu Embedding Pipeline-----------\n")

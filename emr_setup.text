@@ -95,8 +95,8 @@ EMR CLUSTER SETUP
 	echo "Bootstrap complete"
 
 5. SSH access
-   - chmod 400 your-key.pem
-   - ssh -i AWS_KEYS/emr-gpu.pem hadoop@<master-public-ip>.compute-1.amazonaws.com
+   - chmod 400 key.pem
+   - ssh -i key.pem hadoop@<master-public-ip>.compute-1.amazonaws.com
    
 ATTACH EMR STUDIO TO CLUSTER
 
@@ -135,7 +135,7 @@ Set git identity (run in VS Code terminal once connected)
 git config --global user.name "your-name"
 git config --global user.email "your-email@example.com"
 Clone the repo
-git clone <your-repo-url>
+git clone DistGpuEmbedding.git
 Verify the clone is actually complete before doing anything else
 cd DistGpuEmbedding
 git status

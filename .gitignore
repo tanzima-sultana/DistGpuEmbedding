@@ -2,6 +2,7 @@
 *.pem
 .aws/
 *credentials*
+config.py
 
 # Python
 __pycache__/

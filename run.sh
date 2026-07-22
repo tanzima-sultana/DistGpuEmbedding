@@ -6,8 +6,8 @@ export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 export JAVA_TOOL_OPTIONS="--add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED"
 unset SPARK_HOME
 
-RELOAD=1
-DATASET_SIZE=10000
+RELOAD=0
+DATASET_SIZE=1000
 BATCH_SIZE=256
 NUM_PARTITIONS=4
 MODEL="all-MiniLM-L6-v2" #all-mpnet-base-v2
