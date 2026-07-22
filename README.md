@@ -171,11 +171,13 @@ DistGpuEmbedding/
 │   ├── run_embedding.py       # Entry point: embedding only
 │   ├── run_indexing.py        # Entry point: indexing only
 │   ├── run_evaluation.py      # Entry point: evaluation only
-│   └── run_pipeline.py        # Entry point: full pipeline (embed + index + eval)
+│   └── run_pipeline.py        # Entry point: full pipeline
 ├── data/                      # Generated: cached dataset parquet files (gitignored)
 ├── embeddings/                # Generated: embedding output parquet files (gitignored)
 ├── index/                     # Generated: FAISS index files (gitignored)
-├── constants.py                # Shared constants (modes, S3 bucket, cost rates)
+├── constants.py                # Shared, non-sensitive constants (modes, index names, cost rates)
+├── config.py                   # User-specific: S3 bucket, local dataset path (gitignored)
+├── config.py.template          # Template for config.py
 ├── run.sh                      # Local pipeline runner
 ├── aws_run.sh                  # AWS EMR pipeline runner
 ├── requirements.txt
