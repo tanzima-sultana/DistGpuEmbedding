@@ -229,6 +229,13 @@ cd DistGpuEmbedding
 ```
 ## How to Run
 
+Copy the config template and fill in your own values:
+```bash
+cp config.py.template config.py
+```
+
+Edit `config.py` with your S3 bucket name and local dataset path.
+
 ### Local Run
 
 Run the full pipeline (embedding → indexing → evaluation) with a single command:
@@ -342,19 +349,19 @@ With `spark.dynamicAllocation.enabled` at its default, an executor that finished
 
 **Fix:** `spark.dynamicAllocation.enabled=false` for jobs with a known, fixed task count.
 
-## Future Work / Limitations
+## Limitations
 
-- Indexing and evaluation are not distributed. FAISS index construction and evaluation both run single-node on the driver, on the full embedding set collected from Spark. This works at the scales tested here but would become a bottleneck well beyond 500K vectors. A sharded-index approach would be needed to distribute this stage.
+- Indexing and evaluation are not distributed. FAISS index construction and evaluation both run single-node on the driver, on the full embedding set collected from Spark. This works at the scales tested here but would become a bottleneck well beyond 500K vectors. 
 
-- IVF `nlist` was not scaled with corpus size. `nlist=256` was used across all dataset sizes tested. A common heuristic (`nlist ≈ 4×sqrt(N)`) would suggest a substantially higher `nlist` at larger scale.
+- IVF `nlist` was not scaled with corpus size. `nlist=256` was used across all dataset sizes tested. 
 
-- `--deploy-mode client` places the Spark driver on the primary node, which also runs YARN's ResourceManager and HDFS's NameNode. This caused a real failure at 250K scale (see Known Issues). `--deploy-mode cluster` runs the driver on a worker node instead and is the more correct architecture for large jobs.
+- `--deploy-mode client` places the Spark driver on the primary node, which also runs YARN's ResourceManager and HDFS's NameNode. This caused a real failure at 250K scale (see Known Issues). 
 
 - No fault-tolerance or failure-injection testing was performed on this iteration.
 
-- CPU vs GPU comparison was only measured up to 100K documents. 250K and 500K runs were GPU-only, both for cost reasons and because a CPU run at 250K caused the master-node crash documented under Known Issues.
+- CPU vs GPU comparison was only measured up to 100K documents. 250K and 500K runs were GPU-only, both for cost reasons and because a CPU run at 250K caused the master-node crash.
 
 - Indexing and evaluation were only run up to 100K documents, due to driver memory limits during `collect()` at larger scale.
 
-- Single-region, single-cluster testing only. No multi-AZ, spot-instance, or cross-region resilience testing was performed.
+- Single-region, single-cluster testing only. 
 
