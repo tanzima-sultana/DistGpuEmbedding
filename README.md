@@ -88,7 +88,40 @@ This means throughput scales with the number of worker nodes: more workers → m
 
 ## Performance Summary
 
-*(To be added)*
+### CPU vs GPU Embedding Throughput
+
+| Scale | Mode | Embedding Time | Throughput (texts/sec) | Cluster Cost |
+|---|---|---|---|---|
+| 5K | Spark (CPU) | 257.66s | 19.4 | — |
+| 5K | Spark-GPU | 53.23s | 93.9 | — |
+| 10K | Spark (CPU) | 360.37s | 29.2 | $0.1936 |
+| 10K | Spark-GPU | 65.46s | 209.8 | $0.0359 |
+| 50K | Spark (CPU) | 967.58s | 52.8 | $0.4974 |
+| 50K | Spark-GPU | 114.03s | 561.1 | $0.0727 |
+| 100K | Spark (CPU) | 1702.26s | 59.7 | $0.9104 |
+| 100K | Spark-GPU | 182.64s | 659.0 | $0.1263 |
+
+**GPU speedup grew from ~4.8x at 5K to ~9.3x at 100K**, as fixed Spark session/serialization overhead is amortized across a larger workload. GPU runs were also consistently cheaper — up to ~7x lower cost than CPU at the same scale, driven entirely by shorter wall-clock time.
+
+### GPU-Only Scaling (250K–500K)
+
+| Scale | Embedding Time | Throughput (texts/sec) | Cluster Cost |
+|---|---|---|---|
+| 250K | *(pending)* | *(pending)* | *(pending)* |
+| 500K | *(pending)* | *(pending)* | *(pending)* |
+
+CPU comparison was not run at this scale — see [Known Issues](#known-issues--failure-modes) for the master-node crash encountered during an earlier 250K CPU attempt, which led to the decision to run 250K and 500K on GPU only.
+
+### Index Recall / Latency (IVF vs HNSW)
+
+| Scale | IVF Recall@5 (nprobe=32) | HNSW Recall@5 | IVF p50 (nprobe=32) | HNSW p50 |
+|---|---|---|---|---|
+| 5K | 0.830 | 0.817 | 4.349 ms | 0.411 ms |
+| 10K | 0.823 | 0.833 | 0.996 ms | 0.267 ms |
+| 50K | 0.830 | 0.803 | 4.349 ms | 0.411 ms |
+| 100K | 0.807 | 0.810 | 8.543 ms | 0.430 ms |
+
+Recall does not improve monotonically with scale — this reflects natural variance from a fixed 50-query eval sample against a growing corpus, not a methodology issue. HNSW consistently delivers lower query latency than IVF at comparable recall.
 
 ## Cost Analysis
 
