@@ -116,6 +116,28 @@ Install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
+
+### AWS EMR Setup
+
+**Step 1 — Upload bootstrap script to S3:**
+```bash
+aws s3 cp bootstrap.sh s3://your-bucket-name/bootstrap/bootstrap.sh
+```
+
+**Step 2 — Create EMR cluster** (console or CLI):
+- Applications: `Hadoop`, `Spark`
+- Primary node: `[instance type]` x1
+- Core nodes: `g4dn.xlarge` x[N]
+- Bootstrap action: `s3://your-bucket-name/bootstrap/bootstrap.sh`
+- EC2 key pair: your key pair
+- Service role: `EMR_DefaultRole`
+- EC2 instance profile: `EMR_EC2_DefaultRole`
+
+**Step 3 — SSH into master and clone the repo:**
+```bash
+git clone https://github.com/tanzima-sultana/DistGpuEmbedding.git
+cd DistGpuEmbedding
+```
 ## How to Run
 
 ### Local Run
@@ -171,28 +193,43 @@ yarn application -list
 
 **Step 5 — Terminate the cluster once finished** — EMR billing continues until the cluster is explicitly terminated, independent of whether a job is actively running.
 
-### AWS EMR Setup
+## Known Issues / Failure Modes
 
-**Step 1 — Upload bootstrap script to S3:**
-```bash
-aws s3 cp bootstrap.sh s3://your-bucket-name/bootstrap/bootstrap.sh
-```
+### FAISS + NumPy 2.x ABI incompatibility
 
-**Step 2 — Create EMR cluster** (console or CLI):
-- Applications: `Hadoop`, `Spark`
-- Primary node: `[instance type]` x1
-- Core nodes: `g4dn.xlarge` x[N]
-- Bootstrap action: `s3://your-bucket-name/bootstrap/bootstrap.sh`
-- EC2 key pair: your key pair
-- Service role: `EMR_DefaultRole`
-- EC2 instance profile: `EMR_EC2_DefaultRole`
+`faiss-gpu==1.7.2`'s SWIG bindings fail silently with numpy 2.x — `index.add()` raises `ValueError: input not a numpy array` even when passed a genuine numpy array, because numpy 2.x changed internal array representation in a way `swig_ptr` doesn't recognize.
 
-**Step 3 — SSH into master and clone the repo:**
-```bash
-git clone https://github.com/tanzima-sultana/DistGpuEmbedding.git
-cd DistGpuEmbedding
-```
+**Fix:** pin `numpy<2` (numpy 1.26.4 used throughout this project). Confirmed via direct reproduction — installs cleanly with numpy 2.x, fails only at runtime on the first real FAISS operation.
 
+### torch/CUDA version must match the driver, not just "latest"
+
+Installing `torch` with a CUDA index newer than the instance's actual driver support (e.g. `cu128` wheels on a driver that supports up to CUDA 12.6) causes `ImportError: libcusparseLt.so.0: cannot open shared object file` at `import torch` — the bundled NVIDIA runtime libraries are ABI-incompatible with the installed driver.
+
+**Fix:** match the `--index-url` CUDA version to `nvidia-smi`'s reported CUDA Version, not to whatever's newest. Verified against Driver 560.35.03 / CUDA 12.6 → `torch==2.8.0 --index-url https://download.pytorch.org/whl/cu126`.
+
+### `LD_LIBRARY_PATH` via `/etc/environment` doesn't reach Spark executors reliably
+
+Torch's pip-bundled `nvidia-*-cu12` packages don't register themselves on the system linker path. Writing `LD_LIBRARY_PATH` to `/etc/environment` (the standard fix) only takes effect for new PAM login sessions — it does not reliably propagate to YARN-spawned Spark executor processes, which aren't login shells.
+
+**Fix:** compute the NVIDIA library path in `aws_run.sh` and pass it explicitly via `--conf spark.executorEnv.LD_LIBRARY_PATH=...` and `--conf spark.driverEnv.LD_LIBRARY_PATH=...` on every `spark-submit` call, rather than relying on `/etc/environment` propagation.
+
+### OOM at scale with fixed partition count
+
+Running embedding at 250K documents with `NUM_PARTITIONS=4` (tuned for 5K–50K runs) caused a `java.lang.OutOfMemoryError: Java heap space` on task serialization — each partition held too large a data slice for the default executor JVM heap.
+
+**Fix:** partition count must scale with dataset size, not stay fixed. Increased to `NUM_PARTITIONS=16` and set explicit `spark.executor.memory` / `spark.executor.memoryOverhead` / `spark.driver.memory` rather than relying on Spark defaults.
+
+### Master-node CPU starvation crashes the driver via HDFS lease timeout
+
+At 250K scale with `--deploy-mode client`, the Spark driver, HDFS NameNode, and Spark event logging all compete for CPU on the master node. Under sustained load, the NameNode couldn't service the driver's lease-renewal RPC within the 60s timeout, causing a cascading failure: `SocketTimeoutException` → HDFS lease abort → `SparkContext.stop()` → job death, roughly an hour into the run.
+
+**Fix:** disable Spark event logging (`spark.eventLog.enabled=false`, not needed without Spark History Server) and disable dynamic allocation (`spark.dynamicAllocation.enabled=false`, which was reclaiming idle executors mid-stage and worsening the imbalance). `--deploy-mode cluster` (running the driver on a worker instead of master) is a more correct long-term fix, noted under Future Work.
+
+### Dynamic allocation reclaims executors mid-stage
+
+With `spark.dynamicAllocation.enabled` at its default, an executor that finished its assigned tasks slightly early was reclaimed as "idle" while the job's total task count wasn't yet complete — forcing the remaining tasks onto a single executor and roughly doubling the tail-end runtime.
+
+**Fix:** `spark.dynamicAllocation.enabled=false` for jobs with a known, fixed task count.
 
 
 
