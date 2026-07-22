@@ -90,25 +90,25 @@ This means throughput scales with the number of worker nodes: more workers → m
 
 ### CPU vs GPU Embedding Throughput
 
-| Scale | Mode | Embedding Time | Throughput (texts/sec) | Cluster Cost |
-|---|---|---|---|---|
-| 5K | Spark (CPU) | 257.66s | 19.4 | — |
-| 5K | Spark-GPU | 53.23s | 93.9 | — |
-| 10K | Spark (CPU) | 360.37s | 29.2 | $0.1936 |
-| 10K | Spark-GPU | 65.46s | 209.8 | $0.0359 |
-| 50K | Spark (CPU) | 967.58s | 52.8 | $0.4974 |
-| 50K | Spark-GPU | 114.03s | 561.1 | $0.0727 |
-| 100K | Spark (CPU) | 1702.26s | 59.7 | $0.9104 |
-| 100K | Spark-GPU | 182.64s | 659.0 | $0.1263 |
+| Scale | Mode | Embedding Time | Throughput (texts/sec) |
+|---|---|---|---|
+| 5K | Spark (CPU) | 257.66s | 19.4 |
+| 5K | Spark-GPU | 53.23s | 93.9 |
+| 10K | Spark (CPU) | 360.37s | 29.2 |
+| 10K | Spark-GPU | 65.46s | 209.8 |
+| 50K | Spark (CPU) | 967.58s | 52.8 |
+| 50K | Spark-GPU | 114.03s | 561.1 |
+| 100K | Spark (CPU) | 1702.26s | 59.7 |
+| 100K | Spark-GPU | 182.64s | 659.0 |
 
-**GPU speedup grew from ~4.8x at 5K to ~9.3x at 100K**, as fixed Spark session/serialization overhead is amortized across a larger workload. GPU runs were also consistently cheaper — up to ~7x lower cost than CPU at the same scale, driven entirely by shorter wall-clock time.
+**GPU speedup grew from ~4.8x at 5K to ~9.3x at 100K**, as fixed Spark session/serialization overhead is amortized across a larger workload. See [Cost Analysis](#cost-analysis) for per-run cost figures.
 
 ### GPU-Only Scaling (250K–500K)
 
-| Scale | Embedding Time | Throughput (texts/sec) | Cluster Cost |
-|---|---|---|---|
-| 250K | *(pending)* | *(pending)* | *(pending)* |
-| 500K | *(pending)* | *(pending)* | *(pending)* |
+| Scale | Embedding Time | Throughput (texts/sec) |
+|---|---|---|
+| 250K | *(pending)* | *(pending)* |
+| 500K | *(pending)* | *(pending)* |
 
 CPU comparison was not run at this scale — see [Known Issues](#known-issues--failure-modes) for the master-node crash encountered during an earlier 250K CPU attempt, which led to the decision to run 250K and 500K on GPU only.
 
@@ -121,11 +121,29 @@ CPU comparison was not run at this scale — see [Known Issues](#known-issues--f
 | 50K | 0.830 | 0.803 | 4.349 ms | 0.411 ms |
 | 100K | 0.807 | 0.810 | 8.543 ms | 0.430 ms |
 
-Recall does not improve monotonically with scale — this reflects natural variance from a fixed 50-query eval sample against a growing corpus, not a methodology issue. HNSW consistently delivers lower query latency than IVF at comparable recall.
+Recall does not improve monotonically with scale — this reflects natural variance from a fixed 50-query eval sample against a growing corpus, not a methodology issue.
 
 ## Cost Analysis
 
-*(To be added)*
+**Rate assumptions:**
+- EC2 on-demand, g4dn.xlarge, us-east-1: **$0.526/hr** (confirmed against AWS pricing)
+- EMR per-instance surcharge: **~$0.07/hr** (estimate — not verified against official EMR pricing page; actual costs may differ slightly)
+- Cluster: 1 primary + 2 core nodes (g4dn.xlarge) throughout
+
+### Cost by Scale and Mode
+
+| Scale | Mode | Cost |
+|---|---|---|
+| 10K | Spark (CPU) | $0.1936 |
+| 10K | Spark-GPU | $0.0359 |
+| 50K | Spark (CPU) | $0.4974 |
+| 50K | Spark-GPU | $0.0727 |
+| 100K | Spark (CPU) | $0.9104 |
+| 100K | Spark-GPU | $0.1263 |
+| 250K | Spark-GPU | *(pending)* |
+| 500K | Spark-GPU | *(pending)* |
+
+**GPU runs were consistently 5–7x cheaper than CPU runs at the same scale** — not because GPU compute is cheaper per hour, but because GPU finishes so much faster that total cluster-hours billed is far lower. This is the practical argument for GPU at scale: it's not just faster, it's cheaper in aggregate despite running on more expensive hardware.
 
 ## Installation / Setup
 
