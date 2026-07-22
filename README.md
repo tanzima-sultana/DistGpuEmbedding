@@ -9,40 +9,39 @@ A distributed text embedding pipeline built on **Apache Spark** and **CUDA**, ru
 - **[X]% Recall@5** at nprobe=32 (IVF) vs **[X]%** (HNSW)
 
 ## Architecture
+
 Raw Wikipedia Corpus (S3)
-│
-▼
-┌──────────────────────────────────────────────┐
-│         Apache Spark Cluster (AWS EMR)        │
-│                                                │
-│  ┌───────────┐  ┌───────────┐  ┌───────────┐ │
-│  │Partition 0│  │Partition 1│  │    ...    │ │
-│  │ GPU Embed │  │ GPU Embed │  │           │ │
-│  └───────────┘  └───────────┘  └───────────┘ │
-│              mapPartitions()                  │
-│       (model loaded once per partition)       │
-│                                                │
-│   DISTRIBUTED — scales with worker node count │
-└──────────────────────────────────────────────┘
-│
-▼
+|
+v
++--------------------------------------------+
+|      Apache Spark Cluster (AWS EMR)         |
+|                                              |
+|  Partition 0      Partition 1      ...      |
+|  GPU Embed         GPU Embed                |
+|         mapPartitions()                     |
+|   (model loaded once per partition)         |
+|                                              |
+|   DISTRIBUTED -- scales with worker count    |
++--------------------------------------------+
+|
+v
 Embeddings (S3, Parquet)
-│
-▼
-┌──────────────────────────────────────────────┐
-│         FAISS Index Build (Driver)            │
-│   Flat (exact) · IVFFlat · HNSWFlat           │
-│                                                │
-│      SINGLE-NODE — not distributed            │
-└──────────────────────────────────────────────┘
-│
-▼
-┌──────────────────────────────────────────────┐
-│         Evaluation (Driver)                   │
-│   Recall@k · p50 latency · nprobe sweep       │
-│                                                │
-│      SINGLE-NODE — not distributed            │
-└──────────────────────────────────────────────┘
+|
+v
++--------------------------------------------+
+|       FAISS Index Build (Driver)            |
+|   Flat (exact) . IVFFlat . HNSWFlat          |
+|                                              |
+|      SINGLE-NODE -- not distributed          |
++--------------------------------------------+
+|
+v
++--------------------------------------------+
+|          Evaluation (Driver)                 |
+|   Recall@k . p50 latency . nprobe sweep      |
+|                                              |
+|      SINGLE-NODE -- not distributed          |
++--------------------------------------------+
 
 ### How Embedding Distribution Works
 
