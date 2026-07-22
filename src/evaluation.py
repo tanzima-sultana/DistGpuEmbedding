@@ -7,7 +7,7 @@ class Evaluation:
     def __init__(self, k, doc_ids, embeddings, flat_index, ivf_index, hnsw_index):
         self.k = k
         self.doc_ids = doc_ids
-        self.embeddings = embeddings
+        self.embeddings = np.array(embeddings, dtype='float32')
         self.flat_index = flat_index
         self.ivf_index = ivf_index
         self.hnsw_index = hnsw_index

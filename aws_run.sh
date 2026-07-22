@@ -9,7 +9,7 @@ export PYSPARK_DRIVER_PYTHON=/usr/bin/python3
 MODE="aws"                 # local | aws
 DEVICE_MODE="spark"    # cpu | gpu | spark | spark-gpu | gpu-adaptive
 RELOAD=1
-DATASET_SIZE=5000
+DATASET_SIZE=10000
 BATCH_SIZE=256
 NUM_PARTITIONS=4
 MODEL="all-MiniLM-L6-v2" #all-mpnet-base-v2
@@ -22,7 +22,6 @@ zip -r project.zip \
   src/ \
   scripts/ \
   constants.py \
-  load_dataset.py \
   -x "*__pycache__*" \
   -x "*.pyc"
 
@@ -41,6 +40,9 @@ rm -f "$LOG_FILE"
 spark-submit \
   --deploy-mode client \
   --py-files project.zip \
+  --conf spark.executor.memory=6g \
+  --conf spark.executor.memoryOverhead=1g \
+  --conf spark.driver.memory=4g \
   --conf spark.executorEnv.TRANSFORMERS_CACHE=/tmp/transformers_cache \
   --conf spark.executorEnv.HF_HOME=/tmp/hf_home \
   --conf spark.executorEnv.PYSPARK_PYTHON=/usr/bin/python3 \
@@ -48,6 +50,8 @@ spark-submit \
   --conf spark.pyspark.driver.python=/usr/bin/python3 \
   --conf spark.executorEnv.LD_LIBRARY_PATH="${NVIDIA_LIB_PATHS}" \
   --conf spark.driverEnv.LD_LIBRARY_PATH="${NVIDIA_LIB_PATHS}" \
+  --conf spark.dynamicAllocation.enabled=false \
+  --conf spark.eventLog.enabled=false \
   scripts/run_pipeline.py $MODE $DEVICE_MODE $RELOAD $DATASET_SIZE $BATCH_SIZE $NUM_PARTITIONS $MODEL $NO_QUERY "$@" \
   > "$LOG_FILE" 2>&1
 
