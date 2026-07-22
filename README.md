@@ -9,7 +9,7 @@ A distributed text embedding pipeline built on **Apache Spark** and **CUDA**, ru
 - **[X]% Recall@5** at nprobe=32 (IVF) vs **[X]%** (HNSW)
 
 ## Architecture
-
+'''
 Raw Wikipedia Corpus (S3)
 |
 v
@@ -42,7 +42,7 @@ v
 |                                              |
 |      SINGLE-NODE -- not distributed          |
 +--------------------------------------------+
-
+'''
 ### How Embedding Distribution Works
 
 Spark's `mapPartitions` splits the input corpus (loaded from S3) into N partitions, one per configured split. Each partition is sent to a Spark executor running on a worker node, where:
