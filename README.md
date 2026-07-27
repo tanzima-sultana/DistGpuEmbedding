@@ -1,4 +1,4 @@
-# DistEmbedding
+# Distributed Embedding
 
 A distributed text embedding pipeline built on Apache Spark and AWS EMR. It embeds a real Wikipedia corpus of 500K documents across a multi-node cluster using transformer-based sentence encoders, then builds FAISS indexes (Flat, IVF, HNSW) and evaluates retrieval quality with Recall@k and latency benchmarks. GPU-accelerated inference runs on Tesla T4 nodes; an adaptive OOM-aware batcher handles GPU memory pressure automatically.
 
