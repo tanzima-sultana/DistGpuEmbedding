@@ -1,6 +1,8 @@
-# DistributedGpuEmbedding
+# DistEmbedding
 
-A distributed text embedding pipeline built on Apache Spark and CUDA. It runs across GPU-accelerated AWS EMR nodes and embeds a real Wikipedia corpus of 500K documents using transformer-based sentence encoders. The project also builds FAISS indexes (Flat, IVF, HNSW) and evaluates retrieval quality with Recall@k and latency benchmarks. An adaptive OOM-aware batcher handles GPU memory pressure automatically; it was built and validated locally.
+A distributed text embedding pipeline built on Apache Spark and AWS EMR. It embeds a real Wikipedia corpus of 500K documents across a multi-node cluster using transformer-based sentence encoders, then builds FAISS indexes (Flat, IVF, HNSW) and evaluates retrieval quality with Recall@k and latency benchmarks. GPU-accelerated inference runs on Tesla T4 nodes; an adaptive OOM-aware batcher handles GPU memory pressure automatically.
+
+The engineering focus is distributed execution: partitioning the corpus across Spark executors, scaling throughput with worker count, and diagnosing the cluster-level failures (driver memory, executor environment, resource contention).
 
 **Key results:**
 - Processed **500K documents** end-to-end on AWS EMR with Tesla T4 GPUs, in **10.7 minutes**
